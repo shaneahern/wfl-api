@@ -30,7 +30,8 @@ app.add_middleware(
 # Initialize Firestore client
 # Cloud Functions automatically provides credentials via GOOGLE_APPLICATION_CREDENTIALS
 # or default service account
-db = firestore.Client(project=os.environ.get("GCP_PROJECT", "wflbusfinder"))
+# Use the new Native Mode database: wfl-native
+db = firestore.Client(project=os.environ.get("GCP_PROJECT", "wflbusfinder"), database="wfl-native")
 
 # Authentication setup
 security = HTTPBasic()
