@@ -4,6 +4,9 @@ export interface Bus {
   main_street?: string;
   primary_cross_street?: string;
   secondary_cross_street?: string;
+  latitude?: number;
+  longitude?: number;
+  city?: string;
 }
 
 export interface StreetData {

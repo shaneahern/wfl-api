@@ -273,7 +273,10 @@ async def wfl_endpoint(
     busNumber: Optional[str] = Query(None),
     main_street: Optional[str] = Query(None),
     primary_cross_street: Optional[str] = Query(None),
-    secondary_cross_street: Optional[str] = Query(None)
+    secondary_cross_street: Optional[str] = Query(None),
+    latitude: Optional[float] = Query(None),
+    longitude: Optional[float] = Query(None),
+    city: Optional[str] = Query(None)
 ):
     """
     WFL endpoint:
@@ -292,14 +295,26 @@ async def wfl_endpoint(
                 "secondary_cross_street": secondary_cross_street if secondary_cross_street and secondary_cross_street != "null" else ""
             }
             
-            # Remove empty strings for optional fields
-            bus_data = {k: v for k, v in bus_data.items() if v}
+            # Add coordinates and city if provided
+            if latitude is not None:
+                bus_data["latitude"] = latitude
+            if longitude is not None:
+                bus_data["longitude"] = longitude
+            if city:
+                bus_data["city"] = city
             
-            bus_ref.set(bus_data, merge=True)
+            # Remove empty strings for optional fields (but keep coordinates and city)
+            bus_data = {k: v for k, v in bus_data.items() if v != ""}
+            
+            # Use merge=False to ensure all fields are saved (not just merged)
+            # This ensures coordinates are saved even if they weren't in the original document
+            bus_ref.set(bus_data, merge=False)
             logger.info(f"Updated bus {busNumber}")
             
             # Always return JSON response (React frontend uses fetch, not browser navigation)
-            return JSONResponse(content={"success": True, "message": f"Bus {busNumber} saved successfully"})
+            response_data = {"success": True, "message": f"Bus {busNumber} saved successfully"}
+            logger.info(f"Returning response: {response_data}")
+            return JSONResponse(content=response_data)
         
         else:
             # Return all buses as JSON
@@ -318,6 +333,31 @@ async def wfl_endpoint(
     
     except Exception as e:
         logger.error(f"Error in /wfl endpoint: {str(e)}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Internal server error", "message": str(e)}
+        )
+
+
+@app.delete("/admin/delete-all-buses")
+async def delete_all_buses(username: str = Depends(verify_admin)):
+    """Delete all bus documents from Firestore. Admin only."""
+    try:
+        buses_ref = db.collection("Bus")
+        buses = buses_ref.stream()
+        
+        deleted_count = 0
+        for bus in buses:
+            bus.reference.delete()
+            deleted_count += 1
+        
+        logger.info(f"Deleted {deleted_count} bus documents")
+        return JSONResponse(content={
+            "success": True,
+            "message": f"Deleted {deleted_count} bus documents"
+        })
+    except Exception as e:
+        logger.error(f"Error deleting buses: {str(e)}", exc_info=True)
         return JSONResponse(
             status_code=500,
             content={"error": "Internal server error", "message": str(e)}

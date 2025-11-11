@@ -32,7 +32,11 @@ export default defineConfig({
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
-      // Note: /admin routes are handled by React Router, not proxied to backend
+      '/admin/delete-all-buses': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
+      // Note: Other /admin routes are handled by React Router, not proxied to backend
     },
   },
 })
