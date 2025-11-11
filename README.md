@@ -28,6 +28,8 @@ Modern Python FastAPI application for tracking bus locations, deployed to Google
 3. Set environment variable (in another terminal):
    ```bash
    export FIRESTORE_EMULATOR_HOST=localhost:8081
+   export ADMIN_USERNAME=admin
+   export ADMIN_PASSWORD=wfl2026
    ```
 
 4. Run the app:
@@ -36,6 +38,7 @@ Modern Python FastAPI application for tracking bus locations, deployed to Google
    ```
 
 5. Visit: http://localhost:8080/admin
+   - When prompted, enter username: `admin` and password: `wfl2026`
 
 ### Deployment
 
@@ -53,11 +56,26 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed instructions.
 - **New (Cloud Functions)**: ~$0.40/year for annual event
 - **Savings**: ~$299.60/year
 
+## Mobile App Integration
+
+After deploying the Cloud Function, update the mobile app's API endpoint:
+
+1. **Get the function URL**:
+   ```bash
+   gcloud functions describe wfl-api --gen2 --region=us-central1 --format='value(serviceConfig.uri)'
+   ```
+
+2. **Update the mobile app** (`busfinder/config/constants.ts`):
+   - Replace `PROD_API_URL` with: `{FUNCTION_URL}/wfl`
+   - Example: `https://us-central1-wflbusfinder.cloudfunctions.net/wfl-api/wfl`
+
+3. **For local development**, the mobile app will automatically use `http://localhost:8080/wfl` when running in dev mode.
+
 ## API Endpoints
 
 - `GET /` - API information
 - `GET /wfl` - Get all buses (JSON) or create/update a bus
-- `GET /admin` - Admin web interface
+- `GET /admin` - Admin web interface (requires HTTP Basic Auth)
 - `GET /streets` - Street data for dropdowns
 
 ## Links

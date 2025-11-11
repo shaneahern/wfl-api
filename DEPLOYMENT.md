@@ -55,6 +55,8 @@ Modern Python FastAPI application deployed to Google Cloud Functions (2nd gen). 
 2. **Set environment variable** (in another terminal):
    ```bash
    export FIRESTORE_EMULATOR_HOST=localhost:8081
+   export ADMIN_USERNAME=admin
+   export ADMIN_PASSWORD=wfl2026
    ```
 
 3. **Run the FastAPI app** (on port 8080):
@@ -70,7 +72,11 @@ Modern Python FastAPI application deployed to Google Cloud Functions (2nd gen). 
 4. **Test endpoints**:
    - Main: http://localhost:8080/
    - Get all buses: http://localhost:8080/wfl
-   - Admin: http://localhost:8080/admin
+   - Admin: http://localhost:8080/admin (requires HTTP Basic Auth - username: `admin`, password: `wfl2026` by default)
+
+**Note**: The admin endpoints are protected with HTTP Basic Authentication. When prompted, use:
+- Username: `admin` (or value from `ADMIN_USERNAME` env var)
+- Password: `wfl2026` (or value from `ADMIN_PASSWORD` env var)
 
 ### Alternative: Testing with Real Firestore (No Emulator)
 
@@ -132,7 +138,7 @@ gcloud functions deploy wfl-api \
   --timeout=60s \
   --max-instances=10 \
   --allow-unauthenticated \
-  --set-env-vars GCP_PROJECT=wflbusfinder
+  --set-env-vars GCP_PROJECT=wflbusfinder,ADMIN_USERNAME=admin,ADMIN_PASSWORD=wfl2026
 ```
 
 ### Get Function URL
@@ -151,12 +157,19 @@ gcloud functions describe wfl-api \
 - `GET /` - Landing page with API information
 - `GET /wfl` - Returns JSON array of all buses (sorted by busNumber)
 - `GET /wfl?busNumber=X&main_street=...&primary_cross_street=...&secondary_cross_street=...` - Creates/updates bus entry, returns redirect to `/admin`
-- `GET /admin` - Returns redirect to admin interface
+- `GET /admin` - Returns redirect to admin interface (requires HTTP Basic Auth)
+- `GET /admin/index.html` - Admin interface HTML page (requires HTTP Basic Auth)
 
 ## Environment Variables
 
 The function uses the following environment variables:
 - `GCP_PROJECT` - Google Cloud Project ID (default: wflbusfinder)
+- `ADMIN_USERNAME` - Username for admin authentication (default: admin)
+- `ADMIN_PASSWORD` - Password for admin authentication (default: wfl2026)
+
+**Security Note**: For production deployments, set strong `ADMIN_PASSWORD` values. You can set these via:
+- Environment variables before running `./deploy.sh`
+- Or by updating the `--set-env-vars` flag in the deployment command
 
 ## Firestore Data Model
 

@@ -1,12 +1,14 @@
-from fastapi import FastAPI, Query, Request
+from fastapi import FastAPI, Query, Request, HTTPException, Depends, status
 from fastapi.responses import RedirectResponse, JSONResponse, FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from google.cloud import firestore
 from mangum import Mangum
 import os
 import logging
 from typing import Optional, List, Dict, Any
 from pathlib import Path
+import secrets
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO)
@@ -28,6 +30,28 @@ app.add_middleware(
 # Cloud Functions automatically provides credentials via GOOGLE_APPLICATION_CREDENTIALS
 # or default service account
 db = firestore.Client(project=os.environ.get("GCP_PROJECT", "wflbusfinder"))
+
+# Authentication setup
+security = HTTPBasic()
+
+# Get admin credentials from environment variables
+# Default values for local development (should be set via env vars in production)
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "wfl2026")
+
+
+def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
+    """Verify admin credentials using HTTP Basic Auth."""
+    is_correct_username = secrets.compare_digest(credentials.username, ADMIN_USERNAME)
+    is_correct_password = secrets.compare_digest(credentials.password, ADMIN_PASSWORD)
+    
+    if not (is_correct_username and is_correct_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credentials.username
 
 
 # Street data structure
@@ -285,13 +309,13 @@ async def wfl_endpoint(
 
 
 @app.get("/admin")
-async def admin_endpoint():
+async def admin_endpoint(username: str = Depends(verify_admin)):
     """Admin endpoint - serves admin interface."""
     return await admin_html()
 
 
 @app.get("/admin/index.html")
-async def admin_html():
+async def admin_html(username: str = Depends(verify_admin)):
     """Serve admin HTML page."""
     # Try to read from file first (for local development)
     admin_html_path = Path(__file__).parent / "src" / "main" / "webapp" / "admin" / "index.html"
@@ -312,7 +336,7 @@ async def admin_html():
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #0052A5 0%, #003366 100%);
             min-height: 100vh;
             padding: 20px;
         }
@@ -324,11 +348,11 @@ async def admin_html():
             box-shadow: 0 10px 40px rgba(0,0,0,0.2);
             padding: 30px;
         }
-        h1 { color: #333; margin-bottom: 10px; font-size: 28px; }
+        h1 { color: #003366; margin-bottom: 10px; font-size: 28px; }
         .subtitle { color: #666; margin-bottom: 30px; font-size: 14px; }
         .form-group { margin-bottom: 20px; }
         label { display: block; margin-bottom: 8px; color: #333; font-weight: 500; font-size: 14px; }
-        .required { color: #e74c3c; }
+        .required { color: #DC143C; }
         input[type="text"] {
             width: 100%;
             padding: 12px;
@@ -337,7 +361,7 @@ async def admin_html():
             font-size: 16px;
             transition: border-color 0.3s;
         }
-        input[type="text"]:focus, select:focus { outline: none; border-color: #667eea; }
+        input[type="text"]:focus, select:focus { outline: none; border-color: #0052A5; }
         select {
             width: 100%;
             padding: 12px;
@@ -386,7 +410,7 @@ async def admin_html():
         button:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
         button:active { transform: translateY(0); }
         .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #0052A5 0%, #003366 100%);
             color: white;
         }
         .btn-secondary { background: #f0f0f0; color: #333; }
@@ -411,7 +435,7 @@ async def admin_html():
             margin-bottom: 10px;
             font-size: 14px;
         }
-        .bus-number { font-weight: 600; color: #667eea; }
+        .bus-number { font-weight: 600; color: #0052A5; }
         .loading { text-align: center; color: #999; padding: 20px; }
     </style>
 </head>

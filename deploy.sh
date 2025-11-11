@@ -58,7 +58,7 @@ gcloud functions deploy $FUNCTION_NAME \
   --timeout=$TIMEOUT \
   --max-instances=$MAX_INSTANCES \
   --allow-unauthenticated \
-  --set-env-vars GCP_PROJECT=$PROJECT_ID
+  --set-env-vars GCP_PROJECT=$PROJECT_ID,ADMIN_USERNAME=${ADMIN_USERNAME:-admin},ADMIN_PASSWORD=${ADMIN_PASSWORD:-wfl2026}
 
 echo ""
 echo "✅ Deployment complete!"
