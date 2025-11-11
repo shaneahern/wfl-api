@@ -712,13 +712,19 @@ def handler(request: Request):
     Bridges Flask Request to FastAPI (ASGI) using asgiref.
     """
     # Convert Flask request to ASGI scope
+    # Important: Headers must be lowercase for ASGI spec
+    headers_list = []
+    for key, value in request.headers.items():
+        # ASGI requires lowercase header names
+        headers_list.append([key.lower().encode(), value.encode()])
+    
     scope = {
         "type": "http",
         "method": request.method,
         "path": request.path,
         "raw_path": request.path.encode(),
         "query_string": request.query_string,
-        "headers": [[k.encode(), v.encode()] for k, v in request.headers.items()],
+        "headers": headers_list,
         "server": (request.host.split(":")[0] if ":" in request.host else request.host, 
                    int(request.host.split(":")[1]) if ":" in request.host else 80),
         "client": (request.remote_addr or "127.0.0.1", 0),
