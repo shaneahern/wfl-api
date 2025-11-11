@@ -1,5 +1,9 @@
-fastapi==0.104.1
+fastapi>=0.109.0
 mangum==0.17.0
 google-cloud-firestore==2.13.1
 uvicorn[standard]==0.24.0
 pydantic==2.5.0
+starlette>=0.37.0,<1.0.0
+functions-framework>=3.5.0
+flask>=2.3.0
+asgiref>=3.7.0

@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Query, Request, HTTPException, Depends, status
 from fastapi.responses import RedirectResponse, JSONResponse, FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from google.cloud import firestore
 from mangum import Mangum
@@ -240,16 +241,29 @@ def sort_buses_by_number(buses: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return sorted(buses, key=get_bus_number)
 
 
-@app.get("/")
-async def root():
-    """Landing page."""
-    return {
-        "message": "WFL Bus Finder API",
-        "endpoints": {
-            "/wfl": "Get all buses or create/update a bus",
-            "/admin": "Admin interface"
+# Mount static files from React build (if dist directory exists)
+dist_path = Path(__file__).parent / "dist"
+if dist_path.exists():
+    app.mount("/assets", StaticFiles(directory=dist_path / "assets"), name="assets")
+    
+    @app.get("/")
+    async def root():
+        """Serve React app index.html."""
+        index_path = dist_path / "index.html"
+        if index_path.exists():
+            return FileResponse(index_path)
+        return {"message": "WFL Bus Finder API - React app not built"}
+else:
+    @app.get("/")
+    async def root():
+        """Landing page (when React app not built)."""
+        return {
+            "message": "WFL Bus Finder API",
+            "endpoints": {
+                "/wfl": "Get all buses or create/update a bus",
+                "/admin": "Admin interface"
+            }
         }
-    }
 
 
 @app.get("/wfl")
@@ -283,7 +297,8 @@ async def wfl_endpoint(
             logger.info(f"Updated bus {busNumber}")
             
             # Return redirect response with success parameter
-            return RedirectResponse(url="/admin/index.html?saved=true", status_code=302)
+            # Redirect to admin input page in React app
+            return RedirectResponse(url="/admin/input?saved=true", status_code=302)
         
         else:
             # Return all buses as JSON
@@ -661,9 +676,100 @@ async def admin_html(username: str = Depends(verify_admin)):
 </html>""")
 
 
+# SPA catch-all route - must be after all API routes
+if dist_path.exists():
+    @app.get("/{path:path}")
+    async def serve_spa(path: str):
+        """Serve React app for all non-API routes (SPA routing)."""
+        # Don't serve React app for API routes (they're handled above)
+        # API routes: /wfl, /streets, /admin (without subpaths), /admin/index.html
+        if path == "wfl" or path == "streets" or path == "admin" or path == "admin/index.html":
+            raise HTTPException(status_code=404, detail="Not found")
+        
+        # Check if path starts with API route patterns
+        if path.startswith("wfl?") or path.startswith("streets?") or path.startswith("admin?"):
+            raise HTTPException(status_code=404, detail="Not found")
+        
+        # Serve index.html for all other routes (React Router will handle routing)
+        index_path = dist_path / "index.html"
+        if index_path.exists():
+            return FileResponse(index_path)
+        raise HTTPException(status_code=404, detail="React app not found")
+
+
 # Cloud Functions 2nd gen entry point
-# Uses Mangum to adapt FastAPI (ASGI) to Cloud Functions (ASGI-compatible)
-handler = Mangum(app)
+# For HTTP triggers, Cloud Functions Gen2 uses functions-framework with Flask
+# We need to bridge Flask requests to FastAPI (ASGI)
+# Use asgiref.sync to run ASGI app synchronously
+from flask import Request, Response
+from asgiref.sync import async_to_sync
+import json
+
+def handler(request: Request):
+    """
+    Cloud Functions Gen2 HTTP handler.
+    Bridges Flask Request to FastAPI (ASGI) using asgiref.
+    """
+    # Convert Flask request to ASGI scope
+    scope = {
+        "type": "http",
+        "method": request.method,
+        "path": request.path,
+        "raw_path": request.path.encode(),
+        "query_string": request.query_string,
+        "headers": [[k.encode(), v.encode()] for k, v in request.headers.items()],
+        "server": (request.host.split(":")[0] if ":" in request.host else request.host, 
+                   int(request.host.split(":")[1]) if ":" in request.host else 80),
+        "client": (request.remote_addr or "127.0.0.1", 0),
+        "scheme": request.scheme,
+        "http_version": "1.1",
+        "extensions": {},
+    }
+    
+    # Get request body
+    request_body = request.get_data()
+    body_sent = False
+    
+    async def receive():
+        nonlocal body_sent
+        if body_sent:
+            return {"type": "http.disconnect"}
+        body_sent = True
+        return {"type": "http.request", "body": request_body}
+    
+    # Collect response
+    response_data = {"status": 200, "headers": [], "body": b""}
+    
+    async def send(message):
+        if message["type"] == "http.response.start":
+            response_data["status"] = message["status"]
+            response_data["headers"] = message["headers"]
+        elif message["type"] == "http.response.body":
+            response_data["body"] += message.get("body", b"")
+    
+    # Run the ASGI app using asgiref
+    try:
+        # Use async_to_sync to run the ASGI app
+        async def run_asgi():
+            await app(scope, receive, send)
+        
+        async_to_sync(run_asgi)()
+    except Exception as e:
+        import traceback
+        print(f"Error in handler: {e}")
+        print(traceback.format_exc())
+        return Response(
+            json.dumps({"error": str(e)}),
+            status=500,
+            headers={"Content-Type": "application/json"}
+        )
+    
+    # Convert ASGI response to Flask Response
+    status_code = response_data["status"]
+    headers = {k.decode(): v.decode() for k, v in response_data["headers"]}
+    body = response_data["body"]
+    
+    return Response(body, status=status_code, headers=headers)
 
 
 # For local development
