@@ -27,6 +27,15 @@ echo "Function: $FUNCTION_NAME"
 echo "Region: $REGION"
 echo ""
 
+# Build React app first
+echo "Building React app..."
+cd frontend
+npm install
+npm run build
+cd ..
+echo "✅ React app built"
+echo ""
+
 # Verify we're deploying to the correct project
 if [ "$CURRENT_PROJECT" != "$PROJECT_ID" ]; then
     echo "⚠️  WARNING: Current gcloud project ($CURRENT_PROJECT) differs from target ($PROJECT_ID)"
