@@ -1,0 +1,68 @@
+# WFL Bus Finder API
+
+Modern Python FastAPI application for tracking bus locations, deployed to Google Cloud Functions (2nd gen).
+
+## Features
+
+- REST API for bus location tracking
+- Firestore database integration
+- Pay-per-use Cloud Functions deployment (perfect for annual events)
+- Automatic CORS support for mobile apps
+- FastAPI with automatic OpenAPI documentation
+- Admin web interface with dropdown menus for street selection
+
+## Quick Start
+
+### Local Development
+
+1. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. Start Firestore emulator (on port 8081 to avoid conflict):
+   ```bash
+   gcloud emulators firestore start --host-port=localhost:8081
+   ```
+
+3. Set environment variable (in another terminal):
+   ```bash
+   export FIRESTORE_EMULATOR_HOST=localhost:8081
+   ```
+
+4. Run the app:
+   ```bash
+   python main.py
+   ```
+
+5. Visit: http://localhost:8080/admin
+
+### Deployment
+
+Deploy to Cloud Functions:
+
+```bash
+./deploy.sh
+```
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed instructions.
+
+## Cost Savings
+
+- **Old (App Engine)**: ~$300/year
+- **New (Cloud Functions)**: ~$0.40/year for annual event
+- **Savings**: ~$299.60/year
+
+## API Endpoints
+
+- `GET /` - API information
+- `GET /wfl` - Get all buses (JSON) or create/update a bus
+- `GET /admin` - Admin web interface
+- `GET /streets` - Street data for dropdowns
+
+## Links
+
+* [Cloud Functions Console](https://console.cloud.google.com/functions/list?project=wflbusfinder)
+* [Firestore Console](https://console.cloud.google.com/firestore?project=wflbusfinder)
+* [iOS App on AppStore Connect](https://appstoreconnect.apple.com/apps/495757277/appstore/ios/version/deliverable)
+* [Android App on Play Store Developer Console](https://play.google.com/console/u/0/developers/5820018852460086515/app/4976246589771747702/app-dashboard?timespan=thirtyDays)

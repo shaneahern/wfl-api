@@ -1,0 +1,648 @@
+from fastapi import FastAPI, Query, Request
+from fastapi.responses import RedirectResponse, JSONResponse, FileResponse, HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
+from google.cloud import firestore
+from mangum import Mangum
+import os
+import logging
+from typing import Optional, List, Dict, Any
+from pathlib import Path
+
+# Initialize logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Initialize FastAPI app
+app = FastAPI(title="WFL Bus Finder API")
+
+# Add CORS middleware for mobile apps
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, specify actual origins
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Initialize Firestore client
+# Cloud Functions automatically provides credentials via GOOGLE_APPLICATION_CREDENTIALS
+# or default service account
+db = firestore.Client(project=os.environ.get("GCP_PROJECT", "wflbusfinder"))
+
+
+# Street data structure
+# Main streets with their possible primary cross streets
+STREET_DATA = {
+    "Spear Street (east side)": [
+        "Mission Street",
+        "Howard Street",
+        "Folsom Street",
+        "Harrison Street",
+        "Bryant Street"
+    ],
+    "Spear Street (west side)": [
+        "Mission Street",
+        "Howard Street",
+        "Folsom Street",
+        "Harrison Street",
+        "Bryant Street"
+    ],
+    "Folsom Street": [
+        "The Embarcadero",
+        "Spear Street",
+        "Main Street",
+        "Beale Street",
+        "Fremont Street",
+        "Grote Place",
+        "1st Street",
+        "Essex Street",
+        "2nd Street",
+        "Hawthorne Street",
+        "3rd Street",
+        "Mabini Street",
+        "4th Street",
+        "5th Street"
+    ],
+    "Harrison Street": [
+        "The Embarcadero",
+        "Spear Street",
+        "Main Street",
+        "Fremont Street",
+        "1st Street",
+        "Essex Street",
+        "2nd Street",
+        "Hawthorne Street",
+        "3rd Street",
+        "Lapu Lapu Street",
+        "4th Street",
+        "5th Street"
+    ],
+    "Bryant Street": [
+        "The Embarcadero",
+        "Main Street",
+        "Beale Street",
+        "Rincon Street",
+        "2nd Street",
+        "Jack London Alley",
+        "3rd Street",
+        "Ritch Street",
+        "Zoe Street",
+        "4th Street",
+        "5th Street"
+    ],
+    "The Embarcadero": [
+        "Battery Street",
+        "Green Street",
+        "Broadway Street",
+        "Washington Street",
+        "Market Street",
+        "Mission Street",
+        "Howard Street",
+        "Folsom Street",
+        "Harrison Street",
+        "Bryant Street",
+        "Brannan Street",
+        "Townsend Street",
+        "2nd Street",
+        "3rd Street",
+        "4th Street"
+    ]
+}
+
+# Secondary cross street data - depends on both main_street and primary_cross_street
+# Format: (main_street, primary_cross_street): [list of secondary cross streets]
+SECONDARY_CROSS_STREETS = {
+    # Battery Street
+    ("*", "Battery Street"): ["Green Street", "Lombard Street"],
+    # Green Street
+    ("*", "Green Street"): ["Battery Street", "Broadway Street"],
+    # Broadway Street
+    ("*", "Broadway Street"): ["Green Street", "Washington Street"],
+    # Washington Street
+    ("*", "Washington Street"): ["Broadway Street", "Market Street"],
+    # Market Street
+    ("*", "Market Street"): ["Washington Street", "Mission Street"],
+    # Mission Street
+    ("*", "Mission Street"): ["Market Street", "Howard Street"],
+    # Howard Street
+    ("*", "Howard Street"): ["Mission Street", "Folsom Street"],
+    # Folsom Street
+    ("*", "Folsom Street"): ["Howard Street", "Harrison Street"],
+    # Harrison Street
+    ("*", "Harrison Street"): ["Folsom Street", "Bryant Street"],
+    # The Embarcadero
+    ("Bryant Street", "The Embarcadero"): ["Main Street"],
+    ("*", "The Embarcadero"): ["Spear Street"],
+    # Townsend Street
+    ("The Embarcadero", "Townsend Street"): ["Brannan Street"],
+    ("*", "Townsend Street"): ["2nd Street"],
+    # Brannan Street
+    ("*", "Brannan Street"): ["Townsend Street", "Bryant Street"],
+    # Bryant Street
+    ("*", "Bryant Street"): ["Brannan Street", "Harrison Street"],
+    # Spear Street
+    ("*", "Spear Street"): ["The Embarcadero", "Main Street"],
+    # Main Street
+    ("Bryant Street", "Main Street"): ["The Embarcadero", "Beale Street"],
+    ("Harrison Street", "Main Street"): ["Spear Street", "Fremont Street"],
+    ("*", "Main Street"): ["Spear Street", "Beale Street"],
+    # Beale Street
+    ("Bryant Street", "Beale Street"): ["Main Street", "Rincon Street", "2nd Street"],
+    ("*", "Beale Street"): ["Main Street", "Fremont Street"],
+    # Rincon Street
+    ("*", "Rincon Street"): ["Beale Street", "2nd Street"],
+    # Fremont Street
+    ("Harrison Street", "Fremont Street"): ["Main Street", "1st Street"],
+    ("Folsom Street", "Fremont Street"): ["Beale Street", "Grote Place", "1st Street"],
+    ("*", "Fremont Street"): ["Beale Street", "1st Street"],
+    # Grote Place
+    ("*", "Grote Place"): ["Fremont Street", "1st Street"],
+    # 1st Street
+    ("Folsom Street", "1st Street"): ["Fremont Street", "Grote Place", "Essex Place", "2nd Street"],
+    ("*", "1st Street"): ["Fremont Street", "Essex Place", "2nd Street"],
+    # Essex Street
+    ("*", "Essex Street"): ["1st Street", "2nd Street"],
+    # 2nd Street
+    ("Bryant Street", "2nd Street"): ["Beale Street", "Rincon Street", "Jack London Alley", "3rd Street"],
+    ("The Embarcadero", "2nd Street"): ["Townsend Street", "3rd Street"],
+    ("*", "2nd Street"): ["1st Street", "Essex Street", "Hawthorne Street"],
+    # Hawthorne Street
+    ("*", "Hawthorne Street"): ["2nd Street", "3rd Street"],
+    # Jack London Alley
+    ("*", "Jack London Alley"): ["2nd Street", "3rd Street"],
+    # 3rd Street
+    ("The Embarcadero", "3rd Street"): ["2nd Street", "4th Street"],
+    ("Bryant Street", "3rd Street"): ["Jack London Alley", "Ritch Street", "4th Street"],
+    ("Folsom Street", "3rd Street"): ["Hawthorne Street", "Mabini Street", "4th Street"],
+    ("Harrison Street", "3rd Street"): ["Hawthorne Street", "Lapu Lapu Street", "4th Street"],
+    ("*", "3rd Street"): ["4th Street"],
+    # Mabini Street
+    ("*", "Mabini Street"): ["3rd Street", "4th Street"],
+    # Lapu Lapu Street
+    ("*", "Lapu Lapu Street"): ["3rd Street", "4th Street"],
+    # Ritch Street
+    ("*", "Ritch Street"): ["3rd Street", "Zoe Street", "4th Street"],
+    # Zoe Street
+    ("*", "Zoe Street"): ["3rd Street", "Ritch Street", "4th Street"],
+    # 4th Street
+    ("Folsom Street", "4th Street"): ["3rd Street", "Mabini Street", "5th Street"],
+    ("Harrison Street", "4th Street"): ["3rd Street", "Lapu Lapu Street", "5th Street"],
+    ("Bryant Street", "4th Street"): ["3rd Street", "Zoe Street", "Ritch Street", "5th Street"],
+    ("*", "4th Street"): ["3rd Street", "5th Street"],
+    # 5th Street
+    ("*", "5th Street"): ["4th Street"]
+}
+
+
+@app.get("/streets")
+async def get_streets():
+    """Get street data for dropdowns."""
+    return JSONResponse(content={
+        "main_streets": list(STREET_DATA.keys()),
+        "cross_streets": STREET_DATA,
+        "secondary_cross_streets": {f"{k[0]}|{k[1]}": v for k, v in SECONDARY_CROSS_STREETS.items()}
+    })
+
+
+def sort_buses_by_number(buses: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Sort buses by busNumber, handling numeric conversion."""
+    def get_bus_number(bus: Dict[str, Any]) -> int:
+        bus_number = bus.get("busNumber", "")
+        try:
+            return int(bus_number)
+        except (ValueError, TypeError):
+            return 0
+    
+    return sorted(buses, key=get_bus_number)
+
+
+@app.get("/")
+async def root():
+    """Landing page."""
+    return {
+        "message": "WFL Bus Finder API",
+        "endpoints": {
+            "/wfl": "Get all buses or create/update a bus",
+            "/admin": "Admin interface"
+        }
+    }
+
+
+@app.get("/wfl")
+async def wfl_endpoint(
+    busNumber: Optional[str] = Query(None),
+    main_street: Optional[str] = Query(None),
+    primary_cross_street: Optional[str] = Query(None),
+    secondary_cross_street: Optional[str] = Query(None)
+):
+    """
+    WFL endpoint:
+    - GET without params: Returns JSON list of all buses sorted by busNumber
+    - GET with busNumber: Creates/updates bus entry and redirects to /admin
+    """
+    try:
+        if busNumber and busNumber.strip():
+            # Create or update bus entry
+            bus_ref = db.collection("Bus").document(busNumber)
+            
+            bus_data = {
+                "busNumber": busNumber,
+                "main_street": main_street or "",
+                "primary_cross_street": primary_cross_street if primary_cross_street and primary_cross_street != "null" else "",
+                "secondary_cross_street": secondary_cross_street if secondary_cross_street and secondary_cross_street != "null" else ""
+            }
+            
+            # Remove empty strings for optional fields
+            bus_data = {k: v for k, v in bus_data.items() if v}
+            
+            bus_ref.set(bus_data, merge=True)
+            logger.info(f"Updated bus {busNumber}")
+            
+            # Return redirect response with success parameter
+            return RedirectResponse(url="/admin/index.html?saved=true", status_code=302)
+        
+        else:
+            # Return all buses as JSON
+            buses_ref = db.collection("Bus")
+            buses = buses_ref.stream()
+            
+            buses_list = []
+            for bus in buses:
+                bus_dict = bus.to_dict()
+                buses_list.append(bus_dict)
+            
+            # Sort by busNumber
+            buses_list = sort_buses_by_number(buses_list)
+            
+            return JSONResponse(content=buses_list)
+    
+    except Exception as e:
+        logger.error(f"Error in /wfl endpoint: {str(e)}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Internal server error", "message": str(e)}
+        )
+
+
+@app.get("/admin")
+async def admin_endpoint():
+    """Admin endpoint - serves admin interface."""
+    return await admin_html()
+
+
+@app.get("/admin/index.html")
+async def admin_html():
+    """Serve admin HTML page."""
+    # Try to read from file first (for local development)
+    admin_html_path = Path(__file__).parent / "src" / "main" / "webapp" / "admin" / "index.html"
+    if admin_html_path.exists():
+        try:
+            return FileResponse(admin_html_path)
+        except Exception as e:
+            logger.warning(f"Could not read admin HTML file: {e}, using embedded version")
+    
+    # Embedded HTML (works for Cloud Functions deployment)
+    return HTMLResponse("""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WFL Bus Finder - Admin</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            padding: 30px;
+        }
+        h1 { color: #333; margin-bottom: 10px; font-size: 28px; }
+        .subtitle { color: #666; margin-bottom: 30px; font-size: 14px; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; color: #333; font-weight: 500; font-size: 14px; }
+        .required { color: #e74c3c; }
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        input[type="text"]:focus, select:focus { outline: none; border-color: #667eea; }
+        select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 18px;
+            background: white;
+            cursor: pointer;
+            transition: border-color 0.3s;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+        }
+        select option {
+            font-size: 18px;
+            padding: 10px;
+        }
+        @media screen and (max-width: 768px) {
+            select {
+                font-size: 16px !important;
+                padding: 14px;
+                min-height: 48px;
+            }
+            select option {
+                font-size: 20px !important;
+                padding: 16px !important;
+                min-height: 48px;
+                line-height: 1.5;
+            }
+            select:focus {
+                font-size: 18px !important;
+            }
+        }
+        .help-text { font-size: 12px; color: #999; margin-top: 4px; }
+        .button-group { display: flex; gap: 10px; margin-top: 30px; }
+        button {
+            flex: 1;
+            padding: 14px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        button:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        button:active { transform: translateY(0); }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .btn-secondary { background: #f0f0f0; color: #333; }
+        .message {
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .message.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .message.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .buses-list {
+            margin-top: 40px;
+            padding-top: 30px;
+            border-top: 2px solid #e0e0e0;
+        }
+        .buses-list h2 { color: #333; margin-bottom: 15px; font-size: 20px; }
+        .bus-item {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        .bus-number { font-weight: 600; color: #667eea; }
+        .loading { text-align: center; color: #999; padding: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚌 WFL Bus Finder Admin</h1>
+        <p class="subtitle">Enter bus location information</p>
+        
+        <div id="message" class="message"></div>
+        
+        <form id="busForm" onsubmit="submitBus(event)">
+            <div class="form-group">
+                <label for="busNumber">Bus Number <span class="required">*</span></label>
+                <input type="text" id="busNumber" name="busNumber" required 
+                       placeholder="e.g., 123" pattern="[0-9]+" title="Numbers only">
+                <div class="help-text">Enter the bus number</div>
+            </div>
+            
+            <div class="form-group">
+                <label for="main_street">Main Street <span class="required">*</span></label>
+                <select id="main_street" name="main_street" required>
+                    <option value="">-- Select Main Street --</option>
+                </select>
+                <div class="help-text">The main street where the bus is located</div>
+            </div>
+            
+            <div class="form-group">
+                <label for="primary_cross_street">Primary Cross Street</label>
+                <select id="primary_cross_street" name="primary_cross_street">
+                    <option value="">-- Select Cross Street --</option>
+                </select>
+                <div class="help-text">First intersecting street (optional)</div>
+            </div>
+            
+            <div class="form-group">
+                <label for="secondary_cross_street">Secondary Cross Street</label>
+                <select id="secondary_cross_street" name="secondary_cross_street">
+                    <option value="">-- Select Cross Street --</option>
+                </select>
+                <div class="help-text">Second intersecting street (optional)</div>
+            </div>
+            
+            <div class="button-group">
+                <button type="submit" class="btn-primary">Save Bus Location</button>
+                <button type="button" class="btn-secondary" onclick="loadBuses()">Refresh List</button>
+            </div>
+        </form>
+        
+        <div class="buses-list">
+            <h2>Current Buses</h2>
+            <div id="busesContainer" class="loading">Loading buses...</div>
+        </div>
+    </div>
+    
+    <script>
+        let streetData = {};
+        
+        // Debug: Log when script loads
+        console.log('Admin page script loaded');
+        
+        window.addEventListener('DOMContentLoaded', async () => {
+            console.log('DOMContentLoaded fired');
+            await loadStreets();
+            loadBuses();
+        });
+        
+        async function loadStreets() {
+            console.log('loadStreets() called');
+            try {
+                const response = await fetch('/streets');
+                console.log('Fetch response:', response.status, response.statusText);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                console.log('Street data received:', data);
+                
+                if (!data.main_streets || data.main_streets.length === 0) {
+                    console.error('No main streets found in response');
+                    return;
+                }
+                
+                streetData = data.cross_streets || {};
+                window.secondaryCrossStreets = data.secondary_cross_streets || {};
+                
+                // Populate main street dropdown
+                const mainStreetSelect = document.getElementById('main_street');
+                console.log('main_street element:', mainStreetSelect);
+                if (!mainStreetSelect) {
+                    console.error('main_street select element not found');
+                    return;
+                }
+                
+                // Clear existing options except the first one
+                while (mainStreetSelect.options.length > 1) {
+                    mainStreetSelect.remove(1);
+                }
+                
+                data.main_streets.forEach(street => {
+                    const option = document.createElement('option');
+                    option.value = street;
+                    option.textContent = street;
+                    mainStreetSelect.appendChild(option);
+                });
+                
+                console.log(`Loaded ${data.main_streets.length} main streets into dropdown`);
+                
+                // Add change listener to update cross streets
+                mainStreetSelect.addEventListener('change', () => {
+                    updateCrossStreets();
+                    // Clear secondary when main street changes
+                    document.getElementById('secondary_cross_street').innerHTML = '<option value="">-- Select Cross Street --</option>';
+                });
+                
+                // Add change listener to primary cross street to update secondary
+                document.getElementById('primary_cross_street').addEventListener('change', updateSecondaryCrossStreets);
+            } catch (error) {
+                console.error('Error loading streets:', error);
+            }
+        }
+        
+        function updateCrossStreets() {
+            const mainStreet = document.getElementById('main_street').value;
+            const primarySelect = document.getElementById('primary_cross_street');
+            const secondarySelect = document.getElementById('secondary_cross_street');
+            
+            // Clear existing options (except first empty option)
+            primarySelect.innerHTML = '<option value="">-- Select Cross Street --</option>';
+            secondarySelect.innerHTML = '<option value="">-- Select Cross Street --</option>';
+            
+            if (mainStreet && streetData[mainStreet]) {
+                // Populate primary cross streets
+                streetData[mainStreet].forEach(street => {
+                    const option = document.createElement('option');
+                    option.value = street;
+                    option.textContent = street;
+                    primarySelect.appendChild(option);
+                });
+            }
+        }
+        
+        function updateSecondaryCrossStreets() {
+            const mainStreet = document.getElementById('main_street').value;
+            const primaryCrossStreet = document.getElementById('primary_cross_street').value;
+            const secondarySelect = document.getElementById('secondary_cross_street');
+            
+            // Clear existing options
+            secondarySelect.innerHTML = '<option value="">-- Select Cross Street --</option>';
+            
+            if (!mainStreet || !primaryCrossStreet || !window.secondaryCrossStreets) {
+                return;
+            }
+            
+            // Try to find specific match first (main_street|primary_cross_street)
+            let key = `${mainStreet}|${primaryCrossStreet}`;
+            let streets = window.secondaryCrossStreets[key];
+            
+            // If not found, try wildcard match (*|primary_cross_street)
+            if (!streets) {
+                key = `*|${primaryCrossStreet}`;
+                streets = window.secondaryCrossStreets[key];
+            }
+            
+            if (streets && Array.isArray(streets)) {
+                streets.forEach(street => {
+                    const option = document.createElement('option');
+                    option.value = street;
+                    option.textContent = street;
+                    secondarySelect.appendChild(option);
+                });
+            }
+        }
+        
+        function showMessage(text, type) {
+            const messageEl = document.getElementById('message');
+            messageEl.textContent = text;
+            messageEl.className = 'message ' + type;
+            messageEl.style.display = 'block';
+            setTimeout(() => { messageEl.style.display = 'none'; }, 5000);
+        }
+        
+        function submitBus(event) {
+            event.preventDefault();
+            const form = event.target;
+            const formData = new FormData(form);
+            const params = new URLSearchParams();
+            for (const [key, value] of formData.entries()) {
+                if (value.trim()) params.append(key, value.trim());
+            }
+            window.location.href = '/wfl?' + params.toString();
+        }
+        
+        async function loadBuses() {
+            const container = document.getElementById('busesContainer');
+            container.innerHTML = '<div class="loading">Loading buses...</div>';
+            try {
+                const response = await fetch('/wfl');
+                const buses = await response.json();
+                if (buses.length === 0) {
+                    container.innerHTML = '<div class="loading">No buses registered yet.</div>';
+                    return;
+                }
+                container.innerHTML = buses.map(bus => `
+                    <div class="bus-item">
+                        <span class="bus-number">Bus ${bus.busNumber || 'N/A'}</span><br>
+                        <strong>${bus.main_street || 'N/A'}</strong>
+                        ${bus.primary_cross_street ? ` & ${bus.primary_cross_street}` : ''}
+                        ${bus.secondary_cross_street ? ` & ${bus.secondary_cross_street}` : ''}
+                    </div>
+                `).join('');
+            } catch (error) {
+                container.innerHTML = '<div class="loading" style="color: #e74c3c;">Error loading buses. Please try again.</div>';
+            }
+        }
+        
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('saved') === 'true') {
+            showMessage('Bus location saved successfully!', 'success');
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+    </script>
+</body>
+</html>""")
+
+
+# Cloud Functions 2nd gen entry point
+# Uses Mangum to adapt FastAPI (ASGI) to Cloud Functions (ASGI-compatible)
+handler = Mangum(app)
+
+
+# For local development
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8080)
