@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"path": "../wfl-appengine-server"
+		},
+		{
+			"path": "../wfl-appengine-server-v2"
+		},
+		{
+			"path": "."
+		},
+		{
+			"path": "../busfinder"
+		}
+	],
+	"settings": {}
+}

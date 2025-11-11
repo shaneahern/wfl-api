@@ -11,7 +11,7 @@ export function BusEdit() {
   const [primaryCrossStreet, setPrimaryCrossStreet] = useState('');
   const [secondaryCrossStreet, setSecondaryCrossStreet] = useState('');
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [message, setMessage] = useState<{ type: 'error'; text: string } | null>(null);
 
   useEffect(() => {
     if (selectedBusId) {
@@ -30,9 +30,7 @@ export function BusEdit() {
     }
   }, [selectedBusId, buses]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
+  const handleSubmit = async () => {
     if (!busNumber || !mainStreet) {
       setMessage({ type: 'error', text: 'Bus number and main street are required' });
       return;
@@ -49,13 +47,34 @@ export function BusEdit() {
         secondary_cross_street: secondaryCrossStreet || undefined,
       });
       
-      setMessage({ type: 'success', text: 'Bus location updated successfully!' });
+      // Clear selection and refresh bus list (no success message)
       setSelectedBusId('');
       refetch();
     } catch (error) {
+      // Extract error message and sanitize to prevent displaying raw JSON
+      let errorMessage = 'Failed to update bus location';
+      
+      if (error instanceof Error) {
+        const rawMessage = error.message.trim();
+        
+        // Check if error message is JSON and sanitize it
+        if (rawMessage.startsWith('{') || rawMessage.startsWith('[')) {
+          try {
+            const parsed = JSON.parse(rawMessage);
+            errorMessage = parsed.message || 'Failed to update bus location. Please try again.';
+          } catch {
+            errorMessage = 'Failed to update bus location. Please try again.';
+          }
+        } else if (rawMessage.includes('"success"') || rawMessage.includes('"message"')) {
+          errorMessage = 'Failed to update bus location. Please try again.';
+        } else {
+          errorMessage = rawMessage;
+        }
+      }
+      
       setMessage({
         type: 'error',
-        text: error instanceof Error ? error.message : 'Failed to update bus location',
+        text: errorMessage,
       });
     } finally {
       setLoading(false);
@@ -72,14 +91,17 @@ export function BusEdit() {
           <p className="text-gray-600 mb-6">Update existing bus location information</p>
 
           {message && (
-            <div
-              className={`mb-4 p-4 rounded-lg ${
-                message.type === 'success'
-                  ? 'bg-green-100 border border-green-400 text-green-700'
-                  : 'bg-red-100 border border-red-400 text-red-700'
-              }`}
-            >
-              {message.text}
+            <div className="mb-4 p-4 rounded-lg bg-red-100 border border-red-400 text-red-700">
+              {(() => {
+                // Final safety check - never display raw JSON
+                const text = message.text;
+                const trimmed = text.trim();
+                if (trimmed.startsWith('{') || trimmed.startsWith('[') || 
+                    text.includes('"success"') || text.includes('"message"')) {
+                  return 'Failed to update bus location. Please try again.';
+                }
+                return text;
+              })()}
             </div>
           )}
 
@@ -107,7 +129,7 @@ export function BusEdit() {
           </div>
 
           {selectedBusId && (
-            <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="space-y-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Bus Number <span className="text-red-500">*</span>
@@ -130,13 +152,14 @@ export function BusEdit() {
               />
 
               <button
-                type="submit"
+                type="button"
+                onClick={handleSubmit}
                 disabled={loading}
                 className="w-full px-6 py-3 bg-primary-500 text-white rounded-lg hover:bg-primary-600 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? 'Updating...' : 'Update Bus Location'}
               </button>
-            </form>
+            </div>
           )}
         </div>
       </div>

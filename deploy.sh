@@ -14,8 +14,12 @@ MEMORY="256MB"
 TIMEOUT="60s"
 MAX_INSTANCES="10"
 ALLOW_UNAUTHENTICATED="--allow-unauthenticated"
+# Note: wflbusfinder is a project in the personal account
+# This script requires the personal account to be active
+PERSONAL_ACCOUNT="shane@shaneahern.com"  # Required account for wflbusfinder project
 
-# Get current project
+# Get current account and project
+CURRENT_ACCOUNT=$(gcloud config get-value account 2>/dev/null || echo "")
 CURRENT_PROJECT=$(gcloud config get-value project 2>/dev/null || echo "")
 
 echo "=========================================="
@@ -23,13 +27,43 @@ echo "Deploying WFL Bus API to Cloud Functions"
 echo "=========================================="
 echo "Target Project: $PROJECT_ID"
 echo "Current gcloud project: ${CURRENT_PROJECT:-'not set'}"
+echo "Current gcloud account: ${CURRENT_ACCOUNT:-'not set'}"
 echo "Function: $FUNCTION_NAME"
 echo "Region: $REGION"
+echo ""
+
+# Verify we're using the personal account (required for wflbusfinder project)
+if [ "$CURRENT_ACCOUNT" != "$PERSONAL_ACCOUNT" ]; then
+    echo "⚠️  WARNING: Current account ($CURRENT_ACCOUNT) is not the personal account ($PERSONAL_ACCOUNT)"
+    echo "The project $PROJECT_ID belongs to the personal account."
+    echo "Switching to personal account..."
+    gcloud config set account $PERSONAL_ACCOUNT
+    CURRENT_ACCOUNT=$(gcloud config get-value account 2>/dev/null)
+    echo "✅ Account set to $CURRENT_ACCOUNT"
+    echo ""
+fi
+
+# Verify account is correct
+VERIFIED_ACCOUNT=$(gcloud config get-value account 2>/dev/null)
+if [ "$VERIFIED_ACCOUNT" != "$PERSONAL_ACCOUNT" ]; then
+    echo "❌ ERROR: Must use personal account ($PERSONAL_ACCOUNT) for project $PROJECT_ID"
+    exit 1
+fi
+echo "✅ Using account: $VERIFIED_ACCOUNT"
 echo ""
 
 # Build React app first
 echo "Building React app..."
 cd frontend
+
+# Check for Google Maps API key
+if [ -z "$VITE_GOOGLE_MAPS_API_KEY" ]; then
+    echo "⚠️  WARNING: VITE_GOOGLE_MAPS_API_KEY environment variable is not set"
+    echo "The frontend will build but maps may not work."
+    echo "Set it with: export VITE_GOOGLE_MAPS_API_KEY=your_key_here"
+    echo ""
+fi
+
 npm install
 npm run build
 cd ..

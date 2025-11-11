@@ -101,11 +101,29 @@ If you don't want to use the emulator, you can test against your actual Firestor
 
 ## Deployment
 
+### Prerequisites: Google Maps API Key
+
+**IMPORTANT**: Before deploying, you must set up your Google Maps API key:
+
+1. **Get your API key** from [Google Cloud Console](https://console.cloud.google.com/apis/credentials?project=wflbusfinder)
+2. **Set it as an environment variable** before running the deployment script:
+   ```bash
+   export VITE_GOOGLE_MAPS_API_KEY=your_api_key_here
+   ```
+3. **Add API key restrictions** in Google Cloud Console:
+   - Application restrictions: HTTP referrers (add your production domain)
+   - API restrictions: Restrict to "Maps JavaScript API" only
+4. **Never commit API keys** to version control (they're already in `.gitignore`)
+
 ### Option 1: Using Deployment Script (Recommended)
 
 The deployment script automatically sets the correct project (`wflbusfinder`) before deploying:
 
 ```bash
+# Set your Google Maps API key first
+export VITE_GOOGLE_MAPS_API_KEY=your_api_key_here
+
+# Then deploy
 ./deploy.sh
 ```
 
@@ -114,6 +132,7 @@ The deployment script automatically sets the correct project (`wflbusfinder`) be
 - Automatically switch to `wflbusfinder` if needed
 - Verify the project is set correctly before deploying
 - Show warnings if the project differs from expected
+- Build the React frontend with the API key from environment variable
 
 ### Option 2: Manual Deployment
 

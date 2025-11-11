@@ -269,6 +269,7 @@ else:
 
 @app.get("/wfl")
 async def wfl_endpoint(
+    request: Request,
     busNumber: Optional[str] = Query(None),
     main_street: Optional[str] = Query(None),
     primary_cross_street: Optional[str] = Query(None),
@@ -277,7 +278,7 @@ async def wfl_endpoint(
     """
     WFL endpoint:
     - GET without params: Returns JSON list of all buses sorted by busNumber
-    - GET with busNumber: Creates/updates bus entry and redirects to /admin
+    - GET with busNumber: Creates/updates bus entry and returns JSON success response
     """
     try:
         if busNumber and busNumber.strip():
@@ -297,9 +298,8 @@ async def wfl_endpoint(
             bus_ref.set(bus_data, merge=True)
             logger.info(f"Updated bus {busNumber}")
             
-            # Return redirect response with success parameter
-            # Redirect to admin input page in React app
-            return RedirectResponse(url="/admin/input?saved=true", status_code=302)
+            # Always return JSON response (React frontend uses fetch, not browser navigation)
+            return JSONResponse(content={"success": True, "message": f"Bus {busNumber} saved successfully"})
         
         else:
             # Return all buses as JSON

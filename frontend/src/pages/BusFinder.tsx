@@ -4,7 +4,9 @@ import { useGeolocation } from '../hooks/useGeolocation';
 import { BusSelector } from '../components/BusSelector';
 import { BusMap } from '../components/BusMap';
 
-const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyA_hsPlpwVhYZBBSkKqSrCpT0UlapoCT3E';
+// Google Maps API key must be set via VITE_GOOGLE_MAPS_API_KEY environment variable
+// Never commit API keys to the repository!
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
 export function BusFinder() {
   const { buses, loading, error } = useBuses();

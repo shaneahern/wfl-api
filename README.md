@@ -10,10 +10,45 @@ Modern Python FastAPI application for tracking bus locations, deployed to Google
 - Automatic CORS support for mobile apps
 - FastAPI with automatic OpenAPI documentation
 - Admin web interface with dropdown menus for street selection
+- React frontend with Google Maps integration
 
 ## Quick Start
 
-### Local Development
+### Frontend Setup (React)
+
+1. Navigate to frontend directory:
+   ```bash
+   cd frontend
+   ```
+
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+3. Set up Google Maps API key:
+   - Create a `.env.local` file in the `frontend` directory
+   - Add your Google Maps API key:
+     ```
+     VITE_GOOGLE_MAPS_API_KEY=your_api_key_here
+     ```
+   - **Important**: Never commit `.env.local` to git (it's already in `.gitignore`)
+   - Get your API key from [Google Cloud Console](https://console.cloud.google.com/apis/credentials?project=wflbusfinder)
+   - **Security**: Add API key restrictions:
+     - Application restrictions: HTTP referrers (for production domain)
+     - API restrictions: Restrict to "Maps JavaScript API" only
+
+4. Run development server:
+   ```bash
+   npm run dev
+   ```
+
+5. Build for production:
+   ```bash
+   npm run build
+   ```
+
+### Backend Setup (Python/FastAPI)
 
 1. Install dependencies:
    ```bash
@@ -47,6 +82,8 @@ Deploy to Cloud Functions:
 ```bash
 ./deploy.sh
 ```
+
+**Important**: Before deploying, ensure you have set the `VITE_GOOGLE_MAPS_API_KEY` environment variable in your Cloud Function environment variables. The deployment script builds the React frontend, so the API key must be available during build time.
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed instructions.
 
