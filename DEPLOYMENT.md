@@ -57,6 +57,8 @@ Modern Python FastAPI application deployed to Google Cloud Functions (2nd gen). 
    export FIRESTORE_EMULATOR_HOST=localhost:8081
    export ADMIN_USERNAME=admin
    export ADMIN_PASSWORD=wfl2026
+   export SUPERADMIN_USERNAME=superadmin
+   export SUPERADMIN_PASSWORD=wfl2027
    ```
 
 3. **Run the FastAPI app** (on port 8080):
@@ -77,6 +79,11 @@ Modern Python FastAPI application deployed to Google Cloud Functions (2nd gen). 
 **Note**: The admin endpoints are protected with HTTP Basic Authentication. When prompted, use:
 - Username: `admin` (or value from `ADMIN_USERNAME` env var)
 - Password: `wfl2026` (or value from `ADMIN_PASSWORD` env var)
+
+**Superadmin Access**:
+- Username: `superadmin` (or value from `SUPERADMIN_USERNAME` env var)
+- Password: `wfl2027` (or value from `SUPERADMIN_PASSWORD` env var)
+- Superadmin has access to all features including "Delete All Buses"
 
 ### Alternative: Testing with Real Firestore (No Emulator)
 
@@ -162,7 +169,7 @@ gcloud functions deploy wfl-api \
   --timeout=60s \
   --max-instances=10 \
   --allow-unauthenticated \
-  --set-env-vars GCP_PROJECT=wflbusfinder,ADMIN_USERNAME=admin,ADMIN_PASSWORD=wfl2026
+  --set-env-vars GCP_PROJECT=wflbusfinder,ADMIN_USERNAME=admin,ADMIN_PASSWORD=wfl2026,SUPERADMIN_USERNAME=superadmin,SUPERADMIN_PASSWORD=wfl2027
 ```
 
 ### Get Function URL
@@ -190,10 +197,22 @@ The function uses the following environment variables:
 - `GCP_PROJECT` - Google Cloud Project ID (default: wflbusfinder)
 - `ADMIN_USERNAME` - Username for admin authentication (default: admin)
 - `ADMIN_PASSWORD` - Password for admin authentication (default: wfl2026)
+- `SUPERADMIN_USERNAME` - Username for superadmin authentication (default: superadmin)
+- `SUPERADMIN_PASSWORD` - Password for superadmin authentication (default: wfl2027)
 
-**Security Note**: For production deployments, set strong `ADMIN_PASSWORD` values. You can set these via:
-- Environment variables before running `./deploy.sh`
+**Security Note**: For production deployments, set strong password values. You can set these via:
+- Environment variables before running `./deploy.sh`:
+  ```bash
+  export ADMIN_USERNAME=admin
+  export ADMIN_PASSWORD=your_secure_password
+  export SUPERADMIN_USERNAME=superadmin
+  export SUPERADMIN_PASSWORD=your_secure_superadmin_password
+  ```
 - Or by updating the `--set-env-vars` flag in the deployment command
+
+**User Roles**:
+- **Admin** (`admin`): Can add, edit, and view buses. Cannot delete all buses.
+- **Superadmin** (`superadmin`): Full access including the ability to delete all buses.
 
 ## Firestore Data Model
 

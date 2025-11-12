@@ -65,6 +65,8 @@ Modern Python FastAPI application for tracking bus locations, deployed to Google
    export FIRESTORE_EMULATOR_HOST=localhost:8081
    export ADMIN_USERNAME=admin
    export ADMIN_PASSWORD=wfl2026
+   export SUPERADMIN_USERNAME=superadmin
+   export SUPERADMIN_PASSWORD=wfl2027
    ```
 
 4. Run the app:
@@ -74,6 +76,7 @@ Modern Python FastAPI application for tracking bus locations, deployed to Google
 
 5. Visit: http://localhost:8080/admin
    - When prompted, enter username: `admin` and password: `wfl2026`
+   - Or use superadmin: username `superadmin` and password `wfl2027` (has access to delete all buses)
 
 ### Deployment
 
