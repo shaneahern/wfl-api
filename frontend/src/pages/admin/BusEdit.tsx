@@ -365,7 +365,7 @@ export function BusEdit() {
                         : 'text-gray-500 hover:text-gray-700'
                     }`}
                   >
-                    Use Current Location
+                    Use Map
                   </button>
                   <button
                     onClick={() => {
