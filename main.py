@@ -81,23 +81,25 @@ def verify_admin_or_superadmin(credentials: HTTPBasicCredentials = Depends(secur
     username = credentials.username
     password = credentials.password
     
-    # Debug logging (remove in production)
-    logger.debug(f"Authentication attempt: username={username}")
+    # Debug logging
+    logger.info(f"Authentication attempt: username={username}, configured_admin={ADMIN_USERNAME}, configured_superadmin={SUPERADMIN_USERNAME}")
     
     # Check superadmin first
-    is_superadmin = (
-        secrets.compare_digest(username, SUPERADMIN_USERNAME) and
-        secrets.compare_digest(password, SUPERADMIN_PASSWORD)
-    )
+    is_superadmin_username = secrets.compare_digest(username, SUPERADMIN_USERNAME)
+    is_superadmin_password = secrets.compare_digest(password, SUPERADMIN_PASSWORD)
+    is_superadmin = is_superadmin_username and is_superadmin_password
+    
+    logger.info(f"Superadmin check: username_match={is_superadmin_username}, password_match={is_superadmin_password}, result={is_superadmin}")
     
     # Check regular admin
-    is_admin = (
-        secrets.compare_digest(username, ADMIN_USERNAME) and
-        secrets.compare_digest(password, ADMIN_PASSWORD)
-    )
+    is_admin_username = secrets.compare_digest(username, ADMIN_USERNAME)
+    is_admin_password = secrets.compare_digest(password, ADMIN_PASSWORD)
+    is_admin = is_admin_username and is_admin_password
+    
+    logger.info(f"Admin check: username_match={is_admin_username}, password_match={is_admin_password}, result={is_admin}")
     
     if not (is_superadmin or is_admin):
-        logger.warning(f"Authentication failed for username: {username}")
+        logger.warning(f"Authentication failed for username: {username} (admin_match={is_admin}, superadmin_match={is_superadmin})")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials",
