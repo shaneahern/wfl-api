@@ -43,6 +43,10 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "wfl2026")
 SUPERADMIN_USERNAME = os.environ.get("SUPERADMIN_USERNAME", "superadmin")
 SUPERADMIN_PASSWORD = os.environ.get("SUPERADMIN_PASSWORD", "wfl2027")
 
+# Log credentials on startup (for debugging - remove in production)
+logger.info(f"Admin credentials configured: username={ADMIN_USERNAME}")
+logger.info(f"Superadmin credentials configured: username={SUPERADMIN_USERNAME}")
+
 
 def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
     """Verify admin credentials using HTTP Basic Auth."""
@@ -77,6 +81,9 @@ def verify_admin_or_superadmin(credentials: HTTPBasicCredentials = Depends(secur
     username = credentials.username
     password = credentials.password
     
+    # Debug logging (remove in production)
+    logger.debug(f"Authentication attempt: username={username}")
+    
     # Check superadmin first
     is_superadmin = (
         secrets.compare_digest(username, SUPERADMIN_USERNAME) and
@@ -90,12 +97,14 @@ def verify_admin_or_superadmin(credentials: HTTPBasicCredentials = Depends(secur
     )
     
     if not (is_superadmin or is_admin):
+        logger.warning(f"Authentication failed for username: {username}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials",
             headers={"WWW-Authenticate": "Basic"},
         )
     
+    logger.info(f"Authentication successful: username={username}, is_superadmin={is_superadmin}")
     return username
 
 
