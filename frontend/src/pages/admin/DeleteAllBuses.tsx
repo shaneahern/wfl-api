@@ -45,7 +45,7 @@ export function DeleteAllBuses() {
         throw new Error(errorMessage);
       }
 
-      const data = await response.json();
+      await response.json(); // Read response but don't need to use it
       setSuccess(true);
       
       // Refresh the bus list

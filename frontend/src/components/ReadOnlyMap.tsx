@@ -21,14 +21,24 @@ const mapOptions = {
 // Move libraries array outside component to prevent unnecessary reloads
 const libraries: ('marker')[] = ['marker'];
 
-export function ReadOnlyMap({ position, apiKey, height = '400px' }: ReadOnlyMapProps) {
-  const { isLoaded, loadError } = useLoadScript({
-    googleMapsApiKey: apiKey || '',
-    libraries, // Required for AdvancedMarkerElement
-  });
+// Check if Google Maps script is already in the DOM
+function isGoogleMapsScriptLoaded(): boolean {
+  if (typeof google !== 'undefined' && google.maps && google.maps.Map) {
+    return true;
+  }
+  // Check if script tag exists
+  const scripts = document.getElementsByTagName('script');
+  for (let i = 0; i < scripts.length; i++) {
+    if (scripts[i].src && scripts[i].src.includes('maps.googleapis.com/maps/api/js')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function ReadOnlyMapContent({ position, height }: { position: { lat: number; lng: number }; height: string }) {
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const markerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
-
   const mapStyle = { ...mapContainerStyle, height };
 
   // Create marker when map is loaded
@@ -80,39 +90,6 @@ export function ReadOnlyMap({ position, apiKey, height = '400px' }: ReadOnlyMapP
     };
   }, [map, position]);
 
-  if (!apiKey) {
-    return (
-      <div
-        className="w-full bg-gray-200 flex items-center justify-center rounded-lg"
-        style={{ height }}
-      >
-        <p className="text-gray-500">Google Maps API key not configured</p>
-      </div>
-    );
-  }
-
-  if (loadError) {
-    return (
-      <div
-        className="w-full bg-gray-200 flex items-center justify-center rounded-lg"
-        style={{ height }}
-      >
-        <p className="text-red-500">Error loading Google Maps</p>
-      </div>
-    );
-  }
-
-  if (!isLoaded) {
-    return (
-      <div
-        className="w-full bg-gray-200 flex items-center justify-center rounded-lg"
-        style={{ height }}
-      >
-        <p className="text-gray-600">Loading Google Maps...</p>
-      </div>
-    );
-  }
-
   return (
     <GoogleMap
       mapContainerStyle={mapStyle}
@@ -124,4 +101,54 @@ export function ReadOnlyMap({ position, apiKey, height = '400px' }: ReadOnlyMapP
       }}
     />
   );
+}
+
+export function ReadOnlyMap({ position, apiKey, height = '400px' }: ReadOnlyMapProps) {
+  // Check if Google Maps is already loaded
+  const isAlreadyLoaded = isGoogleMapsScriptLoaded();
+  
+  // Only call useLoadScript if Google Maps isn't already loaded
+  // Note: This hook will still be called, but useLoadScript should detect existing script
+  const { isLoaded, loadError } = useLoadScript({
+    googleMapsApiKey: apiKey || '',
+    libraries,
+  });
+  
+  // Use already loaded status if available, otherwise wait for useLoadScript
+  const mapsLoaded = isAlreadyLoaded || isLoaded;
+
+  if (!apiKey) {
+    return (
+      <div
+        className="w-full bg-gray-200 flex items-center justify-center rounded-lg"
+        style={{ height }}
+      >
+        <p className="text-gray-500">Google Maps API key not configured</p>
+      </div>
+    );
+  }
+
+  if (loadError && !isAlreadyLoaded) {
+    return (
+      <div
+        className="w-full bg-gray-200 flex items-center justify-center rounded-lg"
+        style={{ height }}
+      >
+        <p className="text-red-500">Error loading Google Maps</p>
+      </div>
+    );
+  }
+
+  if (!mapsLoaded) {
+    return (
+      <div
+        className="w-full bg-gray-200 flex items-center justify-center rounded-lg"
+        style={{ height }}
+      >
+        <p className="text-gray-600">Loading Google Maps...</p>
+      </div>
+    );
+  }
+
+  return <ReadOnlyMapContent position={position} height={height} />;
 }

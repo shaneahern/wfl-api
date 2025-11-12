@@ -207,14 +207,14 @@ export function BusEdit() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-500 to-primary-700">
-      <div className="container mx-auto px-4 py-8">
-        <div className="max-w-2xl mx-auto bg-white rounded-lg shadow-lg p-6">
+      <div className="container mx-auto px-2 md:px-4 py-4 md:py-8">
+        <div className="max-w-2xl mx-auto bg-white rounded-lg shadow-lg p-4 md:p-6">
           <AdminNav />
-          <div className="mb-6">
-            <h1 className="text-3xl font-bold text-primary-700">
+          <div className="mb-4 md:mb-6">
+            <h1 className="text-2xl md:text-3xl font-bold text-primary-700">
               Edit Bus Location
             </h1>
-            <p className="text-gray-600 mt-2">Update existing bus location information</p>
+            <p className="text-gray-600 mt-1 md:mt-2 text-sm md:text-base">Update existing bus location information</p>
           </div>
 
           {message && (
@@ -265,22 +265,24 @@ export function BusEdit() {
                   </label>
                   {busLocation ? (
                     <>
-                      <EditableLocationMap
-                        initialPosition={busLocation}
-                        onPositionChange={(newPosition) => {
-                          setBusLocation(newPosition);
-                        }}
-                        onGeocodeResult={handleGeocodeResult}
-                        apiKey={GOOGLE_MAPS_API_KEY || ''}
-                        height="400px"
-                      />
-                      <p className="mt-2 text-sm text-gray-500">
+                      <div className="h-[300px] md:h-[400px]">
+                        <EditableLocationMap
+                          initialPosition={busLocation}
+                          onPositionChange={(newPosition) => {
+                            setBusLocation(newPosition);
+                          }}
+                          onGeocodeResult={handleGeocodeResult}
+                          apiKey={GOOGLE_MAPS_API_KEY || ''}
+                          height="100%"
+                        />
+                      </div>
+                      <p className="mt-2 text-xs md:text-sm text-gray-500">
                         Drag the pin to change the location. Street fields will update automatically.
                       </p>
                     </>
                   ) : (
-                    <div className="h-[400px] bg-gray-100 rounded-lg flex items-center justify-center">
-                      <p className="text-gray-500">Loading map...</p>
+                    <div className="h-[300px] md:h-[400px] bg-gray-100 rounded-lg flex items-center justify-center">
+                      <p className="text-gray-500 text-sm md:text-base">Loading map...</p>
                     </div>
                   )}
                 </div>

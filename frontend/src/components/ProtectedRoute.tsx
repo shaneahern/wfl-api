@@ -23,11 +23,13 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
 
       try {
         // Try to access a protected endpoint to verify auth
-        const response = await fetch('/admin/index.html', {
-          method: 'HEAD',
+        // Use credentials: 'omit' to prevent browser from showing native auth dialog
+        const response = await fetch('/admin/verify', {
+          method: 'GET',
           headers: {
             Authorization: authHeader,
           },
+          credentials: 'omit', // Prevent browser from handling auth automatically
         });
         
         if (response.status === 401) {

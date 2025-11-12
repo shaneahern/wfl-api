@@ -111,8 +111,13 @@ If you don't want to use the emulator, you can test against your actual Firestor
    export VITE_GOOGLE_MAPS_API_KEY=your_api_key_here
    ```
 3. **Add API key restrictions** in Google Cloud Console:
-   - Application restrictions: HTTP referrers (add your production domain)
-   - API restrictions: Restrict to "Maps JavaScript API" only
+   - **Application restrictions**: Select "HTTP referrers (web sites)"
+     - Add these referrers (one per line):
+       - `https://wfl-api-ahmqhzf6rq-uc.a.run.app/*`
+       - `https://wfl-api-ahmqhzf6rq-uc.a.run.app/admin/*`
+       - `https://wfl-api-ahmqhzf6rq-uc.a.run.app/admin`
+     - The `/*` wildcard allows all paths under the domain
+   - **API restrictions**: Select "Restrict key" → Choose "Maps JavaScript API" only
 4. **Never commit API keys** to version control (they're already in `.gitignore`)
 
 ### Option 1: Using Deployment Script (Recommended)

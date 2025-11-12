@@ -18,17 +18,21 @@ export function AdminLogin() {
       if (!authHeader) return;
 
       try {
-        const response = await fetch('/admin/index.html', {
-          method: 'HEAD',
+        const response = await fetch('/admin/verify', {
+          method: 'GET',
           headers: {
             Authorization: authHeader,
           },
+          credentials: 'omit', // Prevent browser from handling auth automatically
         });
         if (response.ok) {
           navigate(from, { replace: true });
+        } else {
+          sessionStorage.removeItem('adminAuth');
         }
       } catch {
         // Not authenticated, show login form
+        sessionStorage.removeItem('adminAuth');
       }
     };
     checkAuth();
@@ -42,12 +46,13 @@ export function AdminLogin() {
     try {
       const authHeader = `Basic ${btoa(`${username}:${password}`)}`;
       
-      // Try to access admin endpoint with credentials
-      const response = await fetch('/admin/index.html', {
+      // Try to access admin verify endpoint with credentials
+      const response = await fetch('/admin/verify', {
         method: 'GET',
         headers: {
           Authorization: authHeader,
         },
+        credentials: 'omit', // Prevent browser from handling auth automatically
       });
 
       if (response.ok) {

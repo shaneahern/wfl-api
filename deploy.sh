@@ -59,8 +59,30 @@ cd frontend
 # Check for Google Maps API key
 if [ -z "$VITE_GOOGLE_MAPS_API_KEY" ]; then
     echo "⚠️  WARNING: VITE_GOOGLE_MAPS_API_KEY environment variable is not set"
-    echo "The frontend will build but maps may not work."
-    echo "Set it with: export VITE_GOOGLE_MAPS_API_KEY=your_key_here"
+    echo ""
+    echo "Maps will NOT work without an API key!"
+    echo ""
+    echo "To get your API key:"
+    echo "1. Go to: https://console.cloud.google.com/apis/credentials?project=wflbusfinder"
+    echo "2. Create or select an API key"
+    echo "3. Set Application restrictions: HTTP referrers (web sites)"
+    echo "4. Add these HTTP referrer restrictions:"
+    echo "   - https://wfl-api-ahmqhzf6rq-uc.a.run.app/*"
+    echo "   - https://wfl-api-ahmqhzf6rq-uc.a.run.app/admin/*"
+    echo "   - https://wfl-api-ahmqhzf6rq-uc.a.run.app/admin"
+    echo "5. Set API restrictions: Restrict to 'Maps JavaScript API'"
+    echo ""
+    read -p "Enter your Google Maps API key (required): " API_KEY
+    if [ -z "$API_KEY" ]; then
+        echo "❌ ERROR: API key is required for maps to work"
+        echo "Deployment cancelled. Set VITE_GOOGLE_MAPS_API_KEY and try again."
+        exit 1
+    fi
+    export VITE_GOOGLE_MAPS_API_KEY="$API_KEY"
+    echo "✅ API key set for this build"
+    echo ""
+else
+    echo "✅ Google Maps API key found in environment"
     echo ""
 fi
 

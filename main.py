@@ -339,6 +339,16 @@ async def wfl_endpoint(
         )
 
 
+@app.get("/admin/verify")
+async def verify_admin_endpoint(username: str = Depends(verify_admin)):
+    """Verify admin credentials. Returns success if authenticated."""
+    return JSONResponse(content={
+        "success": True,
+        "authenticated": True,
+        "username": username
+    })
+
+
 @app.delete("/admin/delete-all-buses")
 async def delete_all_buses(username: str = Depends(verify_admin)):
     """Delete all bus documents from Firestore. Admin only."""
@@ -364,357 +374,9 @@ async def delete_all_buses(username: str = Depends(verify_admin)):
         )
 
 
-@app.get("/admin")
-async def admin_endpoint(username: str = Depends(verify_admin)):
-    """Admin endpoint - serves admin interface."""
-    return await admin_html()
-
-
-@app.get("/admin/index.html")
-async def admin_html(username: str = Depends(verify_admin)):
-    """Serve admin HTML page."""
-    # Try to read from file first (for local development)
-    admin_html_path = Path(__file__).parent / "src" / "main" / "webapp" / "admin" / "index.html"
-    if admin_html_path.exists():
-        try:
-            return FileResponse(admin_html_path)
-        except Exception as e:
-            logger.warning(f"Could not read admin HTML file: {e}, using embedded version")
-    
-    # Embedded HTML (works for Cloud Functions deployment)
-    return HTMLResponse("""<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WFL Bus Finder - Admin</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #0052A5 0%, #003366 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }
-        .container {
-            max-width: 600px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-            padding: 30px;
-        }
-        h1 { color: #003366; margin-bottom: 10px; font-size: 28px; }
-        .subtitle { color: #666; margin-bottom: 30px; font-size: 14px; }
-        .form-group { margin-bottom: 20px; }
-        label { display: block; margin-bottom: 8px; color: #333; font-weight: 500; font-size: 14px; }
-        .required { color: #DC143C; }
-        input[type="text"] {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid #e0e0e0;
-            border-radius: 6px;
-            font-size: 16px;
-            transition: border-color 0.3s;
-        }
-        input[type="text"]:focus, select:focus { outline: none; border-color: #0052A5; }
-        select {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid #e0e0e0;
-            border-radius: 6px;
-            font-size: 18px;
-            background: white;
-            cursor: pointer;
-            transition: border-color 0.3s;
-            -webkit-appearance: none;
-            -moz-appearance: none;
-            appearance: none;
-        }
-        select option {
-            font-size: 18px;
-            padding: 10px;
-        }
-        @media screen and (max-width: 768px) {
-            select {
-                font-size: 16px !important;
-                padding: 14px;
-                min-height: 48px;
-            }
-            select option {
-                font-size: 20px !important;
-                padding: 16px !important;
-                min-height: 48px;
-                line-height: 1.5;
-            }
-            select:focus {
-                font-size: 18px !important;
-            }
-        }
-        .help-text { font-size: 12px; color: #999; margin-top: 4px; }
-        .button-group { display: flex; gap: 10px; margin-top: 30px; }
-        button {
-            flex: 1;
-            padding: 14px;
-            border: none;
-            border-radius: 6px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-        button:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
-        button:active { transform: translateY(0); }
-        .btn-primary {
-            background: linear-gradient(135deg, #0052A5 0%, #003366 100%);
-            color: white;
-        }
-        .btn-secondary { background: #f0f0f0; color: #333; }
-        .message {
-            padding: 12px;
-            border-radius: 6px;
-            margin-bottom: 20px;
-            display: none;
-        }
-        .message.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-        .message.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-        .buses-list {
-            margin-top: 40px;
-            padding-top: 30px;
-            border-top: 2px solid #e0e0e0;
-        }
-        .buses-list h2 { color: #333; margin-bottom: 15px; font-size: 20px; }
-        .bus-item {
-            background: #f8f9fa;
-            padding: 12px;
-            border-radius: 6px;
-            margin-bottom: 10px;
-            font-size: 14px;
-        }
-        .bus-number { font-weight: 600; color: #0052A5; }
-        .loading { text-align: center; color: #999; padding: 20px; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>🚌 WFL Bus Finder Admin</h1>
-        <p class="subtitle">Enter bus location information</p>
-        
-        <div id="message" class="message"></div>
-        
-        <form id="busForm" onsubmit="submitBus(event)">
-            <div class="form-group">
-                <label for="busNumber">Bus Number <span class="required">*</span></label>
-                <input type="text" id="busNumber" name="busNumber" required 
-                       placeholder="e.g., 123" pattern="[0-9]+" title="Numbers only">
-                <div class="help-text">Enter the bus number</div>
-            </div>
-            
-            <div class="form-group">
-                <label for="main_street">Main Street <span class="required">*</span></label>
-                <select id="main_street" name="main_street" required>
-                    <option value="">-- Select Main Street --</option>
-                </select>
-                <div class="help-text">The main street where the bus is located</div>
-            </div>
-            
-            <div class="form-group">
-                <label for="primary_cross_street">Primary Cross Street</label>
-                <select id="primary_cross_street" name="primary_cross_street">
-                    <option value="">-- Select Cross Street --</option>
-                </select>
-                <div class="help-text">First intersecting street (optional)</div>
-            </div>
-            
-            <div class="form-group">
-                <label for="secondary_cross_street">Secondary Cross Street</label>
-                <select id="secondary_cross_street" name="secondary_cross_street">
-                    <option value="">-- Select Cross Street --</option>
-                </select>
-                <div class="help-text">Second intersecting street (optional)</div>
-            </div>
-            
-            <div class="button-group">
-                <button type="submit" class="btn-primary">Save Bus Location</button>
-                <button type="button" class="btn-secondary" onclick="loadBuses()">Refresh List</button>
-            </div>
-        </form>
-        
-        <div class="buses-list">
-            <h2>Current Buses</h2>
-            <div id="busesContainer" class="loading">Loading buses...</div>
-        </div>
-    </div>
-    
-    <script>
-        let streetData = {};
-        
-        // Debug: Log when script loads
-        console.log('Admin page script loaded');
-        
-        window.addEventListener('DOMContentLoaded', async () => {
-            console.log('DOMContentLoaded fired');
-            await loadStreets();
-            loadBuses();
-        });
-        
-        async function loadStreets() {
-            console.log('loadStreets() called');
-            try {
-                const response = await fetch('/streets');
-                console.log('Fetch response:', response.status, response.statusText);
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                const data = await response.json();
-                console.log('Street data received:', data);
-                
-                if (!data.main_streets || data.main_streets.length === 0) {
-                    console.error('No main streets found in response');
-                    return;
-                }
-                
-                streetData = data.cross_streets || {};
-                window.secondaryCrossStreets = data.secondary_cross_streets || {};
-                
-                // Populate main street dropdown
-                const mainStreetSelect = document.getElementById('main_street');
-                console.log('main_street element:', mainStreetSelect);
-                if (!mainStreetSelect) {
-                    console.error('main_street select element not found');
-                    return;
-                }
-                
-                // Clear existing options except the first one
-                while (mainStreetSelect.options.length > 1) {
-                    mainStreetSelect.remove(1);
-                }
-                
-                data.main_streets.forEach(street => {
-                    const option = document.createElement('option');
-                    option.value = street;
-                    option.textContent = street;
-                    mainStreetSelect.appendChild(option);
-                });
-                
-                console.log(`Loaded ${data.main_streets.length} main streets into dropdown`);
-                
-                // Add change listener to update cross streets
-                mainStreetSelect.addEventListener('change', () => {
-                    updateCrossStreets();
-                    // Clear secondary when main street changes
-                    document.getElementById('secondary_cross_street').innerHTML = '<option value="">-- Select Cross Street --</option>';
-                });
-                
-                // Add change listener to primary cross street to update secondary
-                document.getElementById('primary_cross_street').addEventListener('change', updateSecondaryCrossStreets);
-            } catch (error) {
-                console.error('Error loading streets:', error);
-            }
-        }
-        
-        function updateCrossStreets() {
-            const mainStreet = document.getElementById('main_street').value;
-            const primarySelect = document.getElementById('primary_cross_street');
-            const secondarySelect = document.getElementById('secondary_cross_street');
-            
-            // Clear existing options (except first empty option)
-            primarySelect.innerHTML = '<option value="">-- Select Cross Street --</option>';
-            secondarySelect.innerHTML = '<option value="">-- Select Cross Street --</option>';
-            
-            if (mainStreet && streetData[mainStreet]) {
-                // Populate primary cross streets
-                streetData[mainStreet].forEach(street => {
-                    const option = document.createElement('option');
-                    option.value = street;
-                    option.textContent = street;
-                    primarySelect.appendChild(option);
-                });
-            }
-        }
-        
-        function updateSecondaryCrossStreets() {
-            const mainStreet = document.getElementById('main_street').value;
-            const primaryCrossStreet = document.getElementById('primary_cross_street').value;
-            const secondarySelect = document.getElementById('secondary_cross_street');
-            
-            // Clear existing options
-            secondarySelect.innerHTML = '<option value="">-- Select Cross Street --</option>';
-            
-            if (!mainStreet || !primaryCrossStreet || !window.secondaryCrossStreets) {
-                return;
-            }
-            
-            // Try to find specific match first (main_street|primary_cross_street)
-            let key = `${mainStreet}|${primaryCrossStreet}`;
-            let streets = window.secondaryCrossStreets[key];
-            
-            // If not found, try wildcard match (*|primary_cross_street)
-            if (!streets) {
-                key = `*|${primaryCrossStreet}`;
-                streets = window.secondaryCrossStreets[key];
-            }
-            
-            if (streets && Array.isArray(streets)) {
-                streets.forEach(street => {
-                    const option = document.createElement('option');
-                    option.value = street;
-                    option.textContent = street;
-                    secondarySelect.appendChild(option);
-                });
-            }
-        }
-        
-        function showMessage(text, type) {
-            const messageEl = document.getElementById('message');
-            messageEl.textContent = text;
-            messageEl.className = 'message ' + type;
-            messageEl.style.display = 'block';
-            setTimeout(() => { messageEl.style.display = 'none'; }, 5000);
-        }
-        
-        function submitBus(event) {
-            event.preventDefault();
-            const form = event.target;
-            const formData = new FormData(form);
-            const params = new URLSearchParams();
-            for (const [key, value] of formData.entries()) {
-                if (value.trim()) params.append(key, value.trim());
-            }
-            window.location.href = '/wfl?' + params.toString();
-        }
-        
-        async function loadBuses() {
-            const container = document.getElementById('busesContainer');
-            container.innerHTML = '<div class="loading">Loading buses...</div>';
-            try {
-                const response = await fetch('/wfl');
-                const buses = await response.json();
-                if (buses.length === 0) {
-                    container.innerHTML = '<div class="loading">No buses registered yet.</div>';
-                    return;
-                }
-                container.innerHTML = buses.map(bus => `
-                    <div class="bus-item">
-                        <span class="bus-number">Bus ${bus.busNumber || 'N/A'}</span><br>
-                        <strong>${bus.main_street || 'N/A'}</strong>
-                        ${bus.primary_cross_street ? ` & ${bus.primary_cross_street}` : ''}
-                        ${bus.secondary_cross_street ? ` & ${bus.secondary_cross_street}` : ''}
-                    </div>
-                `).join('');
-            } catch (error) {
-                container.innerHTML = '<div class="loading" style="color: #e74c3c;">Error loading buses. Please try again.</div>';
-            }
-        }
-        
-        const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.get('saved') === 'true') {
-            showMessage('Bus location saved successfully!', 'success');
-            window.history.replaceState({}, document.title, window.location.pathname);
-        }
-    </script>
-</body>
-</html>""")
+# Note: /admin routes are now handled by React Router in the frontend
+# The React app serves the admin interface, and authentication is handled client-side
+# API endpoints like /admin/delete-all-buses still require server-side authentication
 
 
 # SPA catch-all route - must be after all API routes
@@ -723,15 +385,17 @@ if dist_path.exists():
     async def serve_spa(path: str):
         """Serve React app for all non-API routes (SPA routing)."""
         # Don't serve React app for API routes (they're handled above)
-        # API routes: /wfl, /streets, /admin (without subpaths), /admin/index.html
-        if path == "wfl" or path == "streets" or path == "admin" or path == "admin/index.html":
+        # API routes: /wfl, /streets, /admin/verify, /admin/delete-all-buses (API endpoints only)
+        # Note: /admin UI routes are handled by React Router
+        if path == "wfl" or path == "streets" or path == "admin/verify":
             raise HTTPException(status_code=404, detail="Not found")
         
-        # Check if path starts with API route patterns
-        if path.startswith("wfl?") or path.startswith("streets?") or path.startswith("admin?"):
+        # Check if path starts with API route patterns (but allow /admin/* for React Router)
+        if path.startswith("wfl?") or path.startswith("streets?") or path.startswith("admin/verify"):
             raise HTTPException(status_code=404, detail="Not found")
         
         # Serve index.html for all other routes (React Router will handle routing)
+        # This includes /admin and all /admin/* routes
         index_path = dist_path / "index.html"
         if index_path.exists():
             return FileResponse(index_path)

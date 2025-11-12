@@ -26,6 +26,7 @@ export function useGeolocation(): UseGeolocationReturn {
     setLoading(true);
     setError(null);
 
+    // Request location with high accuracy and timeout
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setPosition({
@@ -35,8 +36,22 @@ export function useGeolocation(): UseGeolocationReturn {
         setLoading(false);
       },
       (err) => {
-        setError(err.message);
+        // Provide more helpful error messages
+        let errorMessage = err.message;
+        if (err.code === err.PERMISSION_DENIED) {
+          errorMessage = 'Location access denied. Please enable location permissions in your browser settings.';
+        } else if (err.code === err.POSITION_UNAVAILABLE) {
+          errorMessage = 'Location information unavailable.';
+        } else if (err.code === err.TIMEOUT) {
+          errorMessage = 'Location request timed out. Please try again.';
+        }
+        setError(errorMessage);
         setLoading(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0, // Don't use cached position
       }
     );
   };

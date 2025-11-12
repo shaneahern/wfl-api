@@ -9,6 +9,7 @@ interface EditableLocationMapProps {
     primaryCrossStreet?: string;
     secondaryCrossStreet?: string;
     fullAddress: string;
+    city?: string;
   }) => void;
   apiKey: string;
   height?: string;
@@ -41,6 +42,7 @@ function MapContent({
     primaryCrossStreet?: string;
     secondaryCrossStreet?: string;
     fullAddress: string;
+    city?: string;
   }) => void;
   map: google.maps.Map | null;
 }) {
@@ -203,7 +205,7 @@ function MapContent({
     if (position) {
       reverseGeocode(position.lat, position.lng);
     }
-  }, [position.lat, position.lng, reverseGeocode]); // Re-geocode when position changes
+  }, [position, reverseGeocode]); // Re-geocode when position changes
 
   return (
     <>
@@ -232,8 +234,9 @@ export function EditableLocationMap({
 }: EditableLocationMapProps) {
   const { isLoaded, loadError } = useLoadScript({
     googleMapsApiKey: apiKey || '',
-    libraries, // Required for AdvancedMarkerElement
+    libraries,
   });
+  
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const [position, setPosition] = useState<{ lat: number; lng: number } | null>(
     initialPosition
@@ -262,7 +265,7 @@ export function EditableLocationMap({
         className="w-full bg-gray-200 flex items-center justify-center rounded-lg"
         style={{ height }}
       >
-        <p className="text-red-500">Error loading Google Maps</p>
+        <p className="text-red-500">Error loading Google Maps: {loadError.message}</p>
       </div>
     );
   }
@@ -292,7 +295,7 @@ export function EditableLocationMap({
   const mapStyle = { ...mapContainerStyle, height };
 
   return (
-    <div className="relative">
+    <div className="relative w-full rounded-lg overflow-hidden" style={{ height, minHeight: height }}>
       <GoogleMap
         mapContainerStyle={mapStyle}
         center={position}
@@ -302,15 +305,17 @@ export function EditableLocationMap({
           setMap(mapInstance);
         }}
       >
-        <MapContent
-          position={position}
-          onPositionChange={(newPos) => {
-            setPosition(newPos);
-            onPositionChange(newPos);
-          }}
-          onGeocodeResult={onGeocodeResult}
-          map={map}
-        />
+        {map && (
+          <MapContent
+            position={position}
+            onPositionChange={(newPos) => {
+              setPosition(newPos);
+              onPositionChange(newPos);
+            }}
+            onGeocodeResult={onGeocodeResult}
+            map={map}
+          />
+        )}
       </GoogleMap>
     </div>
   );

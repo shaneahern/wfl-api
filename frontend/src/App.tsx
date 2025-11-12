@@ -6,6 +6,7 @@ import { BusEdit } from './pages/admin/BusEdit';
 import { BusList } from './pages/admin/BusList';
 import { AllBuses } from './pages/admin/AllBuses';
 import { DeleteAllBuses } from './pages/admin/DeleteAllBuses';
+import { Settings } from './pages/admin/Settings';
 import { AdminLogin } from './pages/admin/AdminLogin';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
@@ -61,6 +62,14 @@ function App() {
           element={
             <ProtectedRoute>
               <DeleteAllBuses />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/settings"
+          element={
+            <ProtectedRoute>
+              <Settings />
             </ProtectedRoute>
           }
         />

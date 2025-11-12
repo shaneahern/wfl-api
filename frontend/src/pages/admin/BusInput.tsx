@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useLoadScript } from '@react-google-maps/api';
 import { useBuses } from '../../hooks/useBuses';
 import { useGeolocation } from '../../hooks/useGeolocation';
 import { StreetSelector } from '../../components/StreetSelector';
@@ -7,6 +6,7 @@ import { EditableLocationMap } from '../../components/EditableLocationMap';
 import { ReadOnlyMap } from '../../components/ReadOnlyMap';
 import { AdminNav } from '../../components/AdminNav';
 import { api } from '../../services/api';
+import { getDefaultEntryMode } from './Settings';
 
 // Google Maps API key must be set via VITE_GOOGLE_MAPS_API_KEY environment variable
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
@@ -17,12 +17,8 @@ export function BusInput() {
   const { buses, refetch } = useBuses();
   const { position: currentPosition, loading: geoLoading, getCurrentPosition } = useGeolocation();
   
-  // Ensure Google Maps is loaded for geocoding (even when map isn't displayed)
-  const { isLoaded: isGoogleMapsLoaded } = useLoadScript({
-    googleMapsApiKey: GOOGLE_MAPS_API_KEY || '',
-  });
-  
-  const [entryMode, setEntryMode] = useState<EntryMode>('location');
+  // Initialize entry mode from settings
+  const [entryMode, setEntryMode] = useState<EntryMode>(getDefaultEntryMode());
   const [busNumber, setBusNumber] = useState('');
   const [mainStreet, setMainStreet] = useState('');
   const [primaryCrossStreet, setPrimaryCrossStreet] = useState('');
@@ -37,6 +33,15 @@ export function BusInput() {
     location: { lat: number; lng: number };
     address: string;
   } | null>(null);
+
+  // Update entry mode from settings when component mounts (only if no bus selected)
+  useEffect(() => {
+    const defaultMode = getDefaultEntryMode();
+    // Only update if we haven't selected a bus number yet (fresh state)
+    if (!busNumber) {
+      setEntryMode(defaultMode);
+    }
+  }, [busNumber]);
 
   // Get available bus numbers (1-225 excluding existing)
   const existingBusNumbers = new Set(buses.map((b) => b.busNumber));
@@ -221,88 +226,95 @@ export function BusInput() {
       } else {
         // For manual entry, geocode the address to get coordinates
         // Always use "San Francisco" since the street selector only contains SF streets
-        console.log('Manual entry geocoding check:', { 
-          googleDefined: typeof google !== 'undefined', 
-          googleMaps: typeof google !== 'undefined' ? !!google.maps : false,
-          isGoogleMapsLoaded,
-          mainStreet 
-        });
+        // Wait for Google Maps to be available (it will be loaded by EditableLocationMap if needed)
+        const waitForGoogleMaps = (callback: () => void, maxAttempts = 50) => {
+          if (typeof google !== 'undefined' && google.maps && google.maps.Geocoder) {
+            callback();
+          } else if (maxAttempts > 0) {
+            setTimeout(() => waitForGoogleMaps(callback, maxAttempts - 1), 100);
+          } else {
+            // Timeout - show modal with default location
+            setSavedBusLocation({
+              busNumber,
+              location: { lat: 37.7749, lng: -122.4194 },
+              address: addressString,
+            });
+            setShowSuccessModal(true);
+          }
+        };
         
-        if (isGoogleMapsLoaded && typeof google !== 'undefined' && google.maps && mainStreet) {
-          const geocoder = new google.maps.Geocoder();
-          const mainStreetClean = mainStreet.replace(/\s*\([^)]*\)\s*/g, '').trim();
-          // Always use San Francisco for manual entry - street selector is SF-only
-          // For geocoding, always use the intersection of main street and primary cross street
-          // Try "and" format first, as it's more commonly recognized
-          const addressToGeocode = primaryCrossStreet 
-            ? `${mainStreetClean} and ${primaryCrossStreet}, San Francisco, CA`
-            : `${mainStreetClean}, San Francisco, CA`;
-          
-          console.log('Geocoding address:', addressToGeocode);
-          
-          geocoder.geocode({ address: addressToGeocode }, (results, status) => {
-            console.log('Geocoding result:', { status, results: results?.[0]?.formatted_address });
+        if (mainStreet) {
+          waitForGoogleMaps(() => {
+            const geocoder = new google.maps.Geocoder();
+            const mainStreetClean = mainStreet.replace(/\s*\([^)]*\)\s*/g, '').trim();
+            // Always use San Francisco for manual entry - street selector is SF-only
+            // For geocoding, always use the intersection of main street and primary cross street
+            // Try "and" format first, as it's more commonly recognized
+            const addressToGeocode = primaryCrossStreet 
+              ? `${mainStreetClean} and ${primaryCrossStreet}, San Francisco, CA`
+              : `${mainStreetClean}, San Francisco, CA`;
             
-            if (status === 'OK' && results && results[0]) {
-              const location = results[0].geometry.location;
-              const geocodedLocation = {
-                lat: location.lat(),
-                lng: location.lng(),
-              };
+            console.log('Geocoding address:', addressToGeocode);
+            
+            geocoder.geocode({ address: addressToGeocode }, (results, status) => {
+              console.log('Geocoding result:', { status, results: results?.[0]?.formatted_address });
               
-              console.log('Geocoded location:', geocodedLocation);
-              
-              setSavedBusLocation({
-                busNumber,
-                location: geocodedLocation,
-                address: addressString, // Use our formatted address string, not geocoded result
-              });
-              setShowSuccessModal(true);
-            } else {
-              // Geocoding failed, try alternative format with "&"
-              console.warn('First geocoding attempt failed, trying alternative format...');
-              const alternativeAddress = primaryCrossStreet 
-                ? `${mainStreetClean} & ${primaryCrossStreet}, San Francisco, CA`
-                : `${mainStreetClean}, San Francisco, CA`;
-              
-              geocoder.geocode({ address: alternativeAddress }, (altResults, altStatus) => {
-                console.log('Alternative geocoding result:', { status: altStatus, results: altResults?.[0]?.formatted_address });
+              if (status === 'OK' && results && results[0]) {
+                const location = results[0].geometry.location;
+                const geocodedLocation = {
+                  lat: location.lat(),
+                  lng: location.lng(),
+                };
                 
-                if (altStatus === 'OK' && altResults && altResults[0]) {
-                  const location = altResults[0].geometry.location;
-                  const geocodedLocation = {
-                    lat: location.lat(),
-                    lng: location.lng(),
-                  };
+                console.log('Geocoded location:', geocodedLocation);
+                
+                setSavedBusLocation({
+                  busNumber,
+                  location: geocodedLocation,
+                  address: addressString, // Use our formatted address string, not geocoded result
+                });
+                setShowSuccessModal(true);
+              } else {
+                // Geocoding failed, try alternative format with "&"
+                console.warn('First geocoding attempt failed, trying alternative format...');
+                const alternativeAddress = primaryCrossStreet 
+                  ? `${mainStreetClean} & ${primaryCrossStreet}, San Francisco, CA`
+                  : `${mainStreetClean}, San Francisco, CA`;
+                
+                geocoder.geocode({ address: alternativeAddress }, (altResults, altStatus) => {
+                  console.log('Alternative geocoding result:', { status: altStatus, results: altResults?.[0]?.formatted_address });
                   
-                  console.log('Geocoded location (alternative):', geocodedLocation);
-                  
-                  setSavedBusLocation({
-                    busNumber,
-                    location: geocodedLocation,
-                    address: addressString, // Use our formatted address string, not geocoded result
-                  });
-                  setShowSuccessModal(true);
-                } else {
-                  // Both attempts failed, show modal with default location
-                  console.error('Geocoding failed:', { status, altStatus, address: addressToGeocode, alternativeAddress });
-                  setSavedBusLocation({
-                    busNumber,
-                    location: { lat: 37.7749, lng: -122.4194 }, // Default SF location
-                    address: addressString,
-                  });
-                  setShowSuccessModal(true);
-                }
-              });
-            }
+                  if (altStatus === 'OK' && altResults && altResults[0]) {
+                    const location = altResults[0].geometry.location;
+                    const geocodedLocation = {
+                      lat: location.lat(),
+                      lng: location.lng(),
+                    };
+                    
+                    console.log('Geocoded location (alternative):', geocodedLocation);
+                    
+                    setSavedBusLocation({
+                      busNumber,
+                      location: geocodedLocation,
+                      address: addressString, // Use our formatted address string, not geocoded result
+                    });
+                    setShowSuccessModal(true);
+                  } else {
+                    // Both attempts failed, show modal with default location
+                    console.error('Geocoding failed:', { status, altStatus, address: addressToGeocode, alternativeAddress });
+                    setSavedBusLocation({
+                      busNumber,
+                      location: { lat: 37.7749, lng: -122.4194 }, // Default SF location
+                      address: addressString,
+                    });
+                    setShowSuccessModal(true);
+                  }
+                });
+              }
+            });
           });
         } else {
-          // Google Maps not loaded, show modal with default location
-          console.error('Google Maps not available for geocoding:', { 
-            googleDefined: typeof google !== 'undefined', 
-            googleMaps: typeof google !== 'undefined' ? !!google.maps : false,
-            mainStreet 
-          });
+          // No main street, show modal with default location
           setSavedBusLocation({
             busNumber,
             location: { lat: 37.7749, lng: -122.4194 }, // Default SF location
@@ -320,8 +332,8 @@ export function BusInput() {
       setSelectedLocation(null);
       setCity('');
       setFullAddress('');
-      // Keep the current entry mode (don't reset to location)
-      // setEntryMode stays as is - if manual, stay manual; if location, stay location
+      // Reset to default entry mode from settings
+      setEntryMode(getDefaultEntryMode());
       refetch();
     } catch (error) {
       // Extract error message and sanitize to prevent displaying raw JSON
@@ -355,26 +367,28 @@ export function BusInput() {
   };
 
   // Determine location to show on map
+  // Default to San Francisco center if no location is available
+  const defaultLocation = { lat: 37.7749, lng: -122.4194 }; // San Francisco center
   const mapLocation = entryMode === 'location' && selectedLocation
     ? selectedLocation
     : currentPosition
     ? { lat: currentPosition.latitude, lng: currentPosition.longitude }
-    : null;
+    : defaultLocation; // Always provide a location so map can display
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-500 to-primary-700">
-      <div className="container mx-auto px-4 py-8">
-        <div className="max-w-2xl mx-auto bg-white rounded-lg shadow-lg p-6">
+      <div className="container mx-auto px-2 md:px-4 py-4 md:py-8">
+        <div className="max-w-2xl mx-auto bg-white rounded-lg shadow-lg p-4 md:p-6">
           <AdminNav />
-          <div className="mb-6">
-            <h1 className="text-3xl font-bold text-primary-700">
+          <div className="mb-4 md:mb-6">
+            <h1 className="text-2xl md:text-3xl font-bold text-primary-700">
               Add New Bus Location
             </h1>
-            <p className="text-gray-600 mt-2">Enter bus location information</p>
+            <p className="text-gray-600 mt-1 md:mt-2 text-sm md:text-base">Enter bus location information</p>
           </div>
 
           {/* Bus Number Selection */}
-          <div className="mb-6">
+          <div className="mb-4 md:mb-6">
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Bus Number <span className="text-red-500">*</span>
             </label>
@@ -382,7 +396,7 @@ export function BusInput() {
               value={busNumber}
               onChange={(e) => setBusNumber(e.target.value)}
               required
-              className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full p-2 md:p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm md:text-base"
             >
               <option value="">-- Select Bus Number --</option>
               {availableBusNumbers.map((num) => (
@@ -391,16 +405,16 @@ export function BusInput() {
                 </option>
               ))}
             </select>
-            <p className="mt-1 text-sm text-gray-500">
+            <p className="mt-1 text-xs md:text-sm text-gray-500">
               Only buses without existing locations are shown
             </p>
           </div>
 
           {/* Tab Toggle */}
-          <div className="mb-6 flex gap-2 border-b border-gray-200">
+          <div className="mb-4 md:mb-6 flex gap-2 border-b border-gray-200">
             <button
               onClick={handleLocationMode}
-              className={`px-4 py-2 font-medium transition-colors ${
+              className={`px-3 md:px-4 py-2 font-medium transition-colors text-sm md:text-base ${
                 entryMode === 'location'
                   ? 'border-b-2 border-primary-500 text-primary-700'
                   : 'text-gray-500 hover:text-gray-700'
@@ -414,7 +428,7 @@ export function BusInput() {
                 setSelectedLocation(null);
                 setFullAddress('');
               }}
-              className={`px-4 py-2 font-medium transition-colors ${
+              className={`px-3 md:px-4 py-2 font-medium transition-colors text-sm md:text-base ${
                 entryMode === 'manual'
                   ? 'border-b-2 border-primary-500 text-primary-700'
                   : 'text-gray-500 hover:text-gray-700'
@@ -456,63 +470,59 @@ export function BusInput() {
             {/* Location Mode */}
             {entryMode === 'location' && busNumber && (
               <div className="space-y-4">
-                {!mapLocation ? (
-                  <div className="p-8 bg-gray-50 rounded-lg text-center">
-                    {geoLoading ? (
-                      <p className="text-gray-600">Getting your location...</p>
-                    ) : (
-                      <div>
-                        <p className="text-gray-600 mb-4">Location not available</p>
-                        <button
-                          onClick={getCurrentPosition}
-                          className="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600"
-                        >
-                          Get Current Location
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <>
-                    <div>
-                      <p className="text-sm text-gray-600 mb-2">
-                        Drag the pin to adjust the location. The address will be automatically detected.
+                <div>
+                  {!currentPosition && !selectedLocation && (
+                    <div className="mb-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                      <p className="text-xs md:text-sm text-blue-700 mb-2">
+                        💡 Map is showing San Francisco center. Click "Get Current Location" to use your location, or drag the pin to set a location.
                       </p>
-                      <EditableLocationMap
-                        initialPosition={mapLocation}
-                        onPositionChange={(pos: { lat: number; lng: number }) => {
-                          setSelectedLocation(pos);
-                          setFullAddress('');
-                        }}
-                        onGeocodeResult={handleGeocodeResult}
-                        apiKey={GOOGLE_MAPS_API_KEY || ''}
-                        height="400px"
-                      />
+                      <button
+                        onClick={getCurrentPosition}
+                        disabled={geoLoading}
+                        className="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                      >
+                        {geoLoading ? 'Getting location...' : 'Get Current Location'}
+                      </button>
                     </div>
-                    {fullAddress && (
-                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                        <p className="text-sm font-medium text-gray-700 mb-1">Detected Address:</p>
-                        <p className="text-gray-900">{fullAddress}</p>
-                        {mainStreet && (
-                          <div className="mt-2 text-sm text-gray-600">
-                            <span className="font-medium">Main Street:</span> {mainStreet}
-                            {primaryCrossStreet && (
-                              <>
-                                <br />
-                                <span className="font-medium">Cross Street:</span> {primaryCrossStreet}
-                              </>
-                            )}
-                            {secondaryCrossStreet && (
-                              <>
-                                <br />
-                                <span className="font-medium">Secondary Cross Street:</span> {secondaryCrossStreet}
-                              </>
-                            )}
-                          </div>
+                  )}
+                  <p className="text-xs md:text-sm text-gray-600 mb-2">
+                    Drag the pin to adjust the location. The address will be automatically detected.
+                  </p>
+                  <div className="h-[300px] md:h-[400px]">
+                    <EditableLocationMap
+                      initialPosition={mapLocation}
+                      onPositionChange={(pos: { lat: number; lng: number }) => {
+                        setSelectedLocation(pos);
+                        setFullAddress('');
+                      }}
+                      onGeocodeResult={handleGeocodeResult}
+                      apiKey={GOOGLE_MAPS_API_KEY || ''}
+                      height="100%"
+                    />
+                  </div>
+                </div>
+                {fullAddress && (
+                  <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                    <p className="text-sm font-medium text-gray-700 mb-1">Detected Address:</p>
+                    <p className="text-gray-900">{fullAddress}</p>
+                    {mainStreet && (
+                      <div className="mt-2 text-sm text-gray-600">
+                        <span className="font-medium">Main Street:</span> {mainStreet}
+                        {primaryCrossStreet && (
+                          <>
+                            <br />
+                            <span className="font-medium">Cross Street:</span> {primaryCrossStreet}
+                          </>
+                        )}
+                        {secondaryCrossStreet && (
+                          <>
+                            <br />
+                            <span className="font-medium">Secondary Cross Street:</span> {secondaryCrossStreet}
+                          </>
                         )}
                       </div>
                     )}
-                  </>
+                  </div>
                 )}
               </div>
             )}
