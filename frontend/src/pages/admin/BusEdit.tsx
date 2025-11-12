@@ -1,23 +1,31 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useBuses } from '../../hooks/useBuses';
+import { useGeolocation } from '../../hooks/useGeolocation';
 import { StreetSelector } from '../../components/StreetSelector';
 import { EditableLocationMap } from '../../components/EditableLocationMap';
 import { AdminNav } from '../../components/AdminNav';
 import { api } from '../../services/api';
+import { getDefaultEntryMode } from './Settings';
 
 // Google Maps API key must be set via VITE_GOOGLE_MAPS_API_KEY environment variable
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
+type EntryMode = 'manual' | 'location';
+
 export function BusEdit() {
   const { buses, refetch } = useBuses();
+  const { position: currentPosition, loading: geoLoading, getCurrentPosition } = useGeolocation();
   const [searchParams] = useSearchParams();
   const [selectedBusId, setSelectedBusId] = useState('');
+  const [entryMode, setEntryMode] = useState<EntryMode>('location');
   const [busNumber, setBusNumber] = useState('');
   const [mainStreet, setMainStreet] = useState('');
   const [primaryCrossStreet, setPrimaryCrossStreet] = useState('');
   const [secondaryCrossStreet, setSecondaryCrossStreet] = useState('');
   const [busLocation, setBusLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [selectedLocation, setSelectedLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [fullAddress, setFullAddress] = useState<string>('');
   const [city, setCity] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'error'; text: string } | null>(null);
@@ -41,66 +49,23 @@ export function BusEdit() {
         setSecondaryCrossStreet(bus.secondary_cross_street || '');
         setCity(bus.city || '');
         
-        // Use coordinates if available, otherwise geocode from address
+        // Determine entry mode based on available data
+        // If bus has coordinates, default to location mode; otherwise manual
         if (bus.latitude !== undefined && bus.longitude !== undefined) {
-          // Use stored coordinates directly
+          setEntryMode('location');
           setBusLocation({
             lat: bus.latitude,
             lng: bus.longitude,
           });
-        } else if (bus.main_street && bus.primary_cross_street) {
-          // Geocode bus location for map display
-          const geocodeBusLocation = () => {
-            if (typeof google !== 'undefined' && google.maps) {
-              const geocoder = new google.maps.Geocoder();
-              const mainStreet = bus.main_street!.replace(/\s*\([^)]*\)\s*/g, '').trim();
-              const city = bus.city || 'San Francisco';
-              
-              // If secondary_cross_street exists, use primary_cross_street and secondary_cross_street as the intersection
-              // Otherwise, use main_street and primary_cross_street
-              let address: string;
-              if (bus.secondary_cross_street && bus.primary_cross_street) {
-                address = `${bus.primary_cross_street} and ${bus.secondary_cross_street}, ${city}, CA`;
-              } else {
-                address = `${mainStreet} and ${bus.primary_cross_street}, ${city}, CA`;
-              }
-              
-              geocoder.geocode({ address }, (results, status) => {
-                if (status === 'OK' && results && results[0]) {
-                  const location = results[0].geometry.location;
-                  setBusLocation({
-                    lat: location.lat(),
-                    lng: location.lng(),
-                  });
-                } else {
-                  // If geocoding fails, set a default location (SF area)
-                  setBusLocation({
-                    lat: 37.788257,
-                    lng: -122.397373,
-                  });
-                }
-              });
-            } else {
-              // Wait for google.maps to load
-              const checkGoogle = setInterval(() => {
-                if (typeof google !== 'undefined' && google.maps) {
-                  clearInterval(checkGoogle);
-                  geocodeBusLocation();
-                }
-              }, 100);
-              
-              // Cleanup interval after 5 seconds
-              setTimeout(() => clearInterval(checkGoogle), 5000);
-            }
-          };
-          
-          geocodeBusLocation();
-        } else {
-          // No street info, set default location
-          setBusLocation({
-            lat: 37.788257,
-            lng: -122.397373,
+          setSelectedLocation({
+            lat: bus.latitude,
+            lng: bus.longitude,
           });
+        } else {
+          // Default to manual mode if no coordinates
+          setEntryMode('manual');
+          setBusLocation(null);
+          setSelectedLocation(null);
         }
       }
     } else {
@@ -109,8 +74,40 @@ export function BusEdit() {
       setPrimaryCrossStreet('');
       setSecondaryCrossStreet('');
       setBusLocation(null);
+      setSelectedLocation(null);
+      setFullAddress('');
+      setEntryMode(getDefaultEntryMode());
     }
   }, [selectedBusId, buses]);
+
+  // Initialize selectedLocation when currentPosition becomes available in location mode
+  useEffect(() => {
+    if (entryMode === 'location' && currentPosition && !selectedLocation && !busLocation) {
+      setSelectedLocation({
+        lat: currentPosition.latitude,
+        lng: currentPosition.longitude,
+      });
+    }
+  }, [entryMode, currentPosition, selectedLocation, busLocation]);
+
+  // Auto-get location when switching to location mode
+  useEffect(() => {
+    if (entryMode === 'location' && !currentPosition && !geoLoading && !busLocation) {
+      getCurrentPosition();
+    }
+  }, [entryMode, currentPosition, geoLoading, busLocation, getCurrentPosition]);
+
+  // Handle location mode - get current position when switching to location mode
+  const handleLocationMode = () => {
+    setEntryMode('location');
+    if (!busLocation) {
+      setSelectedLocation(null);
+      setFullAddress('');
+      if (!currentPosition) {
+        getCurrentPosition();
+      }
+    }
+  };
 
   // Handle geocode result from EditableLocationMap when pin is dragged
   const handleGeocodeResult = (result: {
@@ -120,6 +117,7 @@ export function BusEdit() {
     fullAddress: string;
     city?: string;
   }) => {
+    setFullAddress(result.fullAddress);
     if (result.mainStreet) {
       setMainStreet(result.mainStreet);
     }
@@ -134,17 +132,44 @@ export function BusEdit() {
     }
   };
 
+  // Determine location to show on map
+  // Default to San Francisco center if no location is available
+  const defaultLocation = { lat: 37.7749, lng: -122.4194 }; // San Francisco center
+  const mapLocation = entryMode === 'location' && selectedLocation
+    ? selectedLocation
+    : currentPosition
+    ? { lat: currentPosition.latitude, lng: currentPosition.longitude }
+    : busLocation || defaultLocation; // Use existing bus location if available, otherwise default
+
   const handleSubmit = async () => {
-    if (!busNumber || !mainStreet) {
-      setMessage({ type: 'error', text: 'Bus number and main street are required' });
+    if (!busNumber) {
+      setMessage({ type: 'error', text: 'Bus number is required' });
       return;
+    }
+
+    // For location mode, require coordinates but not street address
+    if (entryMode === 'location') {
+      const locationToSave = selectedLocation || (currentPosition ? {
+        lat: currentPosition.latitude,
+        lng: currentPosition.longitude,
+      } : null);
+      
+      if (!locationToSave) {
+        setMessage({ type: 'error', text: 'Please select a location first' });
+        return;
+      }
+    } else {
+      // For manual mode, require main street
+      if (!mainStreet) {
+        setMessage({ type: 'error', text: 'Main street is required for manual entry' });
+        return;
+      }
     }
 
     setLoading(true);
     setMessage(null);
 
     try {
-      // Include coordinates and city if busLocation is set (pin was dragged)
       const busData: {
         busNumber: string;
         main_street?: string;
@@ -160,12 +185,66 @@ export function BusEdit() {
         secondary_cross_street: secondaryCrossStreet || undefined,
       };
 
-      // Add coordinates and city if location was set (from map)
-      if (busLocation) {
-        busData.latitude = busLocation.lat;
-        busData.longitude = busLocation.lng;
-        if (city) {
-          busData.city = city;
+      // If saving from location mode, include coordinates and city
+      if (entryMode === 'location') {
+        const locationToSave = selectedLocation || (currentPosition ? {
+          lat: currentPosition.latitude,
+          lng: currentPosition.longitude,
+        } : null);
+        
+        if (locationToSave) {
+          busData.latitude = locationToSave.lat;
+          busData.longitude = locationToSave.lng;
+          if (city) {
+            busData.city = city;
+          }
+        }
+      } else {
+        // For manual entry, geocode the address to get coordinates
+        // Wait for Google Maps to be available (it will be loaded by EditableLocationMap if needed)
+        const waitForGoogleMaps = (callback: () => void, maxAttempts = 50) => {
+          if (typeof google !== 'undefined' && google.maps && google.maps.Geocoder) {
+            callback();
+          } else if (maxAttempts > 0) {
+            setTimeout(() => waitForGoogleMaps(callback, maxAttempts - 1), 100);
+          } else {
+            // Timeout - save without coordinates
+            api.saveBus(busData).then(() => {
+              setSelectedBusId('');
+              refetch();
+              setLoading(false);
+            }).catch((error) => {
+              handleSubmitError(error);
+            });
+          }
+        };
+        
+        if (mainStreet) {
+          waitForGoogleMaps(() => {
+            const geocoder = new google.maps.Geocoder();
+            const mainStreetClean = mainStreet.replace(/\s*\([^)]*\)\s*/g, '').trim();
+            const addressToGeocode = primaryCrossStreet 
+              ? `${mainStreetClean} and ${primaryCrossStreet}, San Francisco, CA`
+              : `${mainStreetClean}, San Francisco, CA`;
+            
+            geocoder.geocode({ address: addressToGeocode }, (results, status) => {
+              if (status === 'OK' && results && results[0]) {
+                const location = results[0].geometry.location;
+                busData.latitude = location.lat();
+                busData.longitude = location.lng();
+              }
+              
+              // Save regardless of geocoding result
+              api.saveBus(busData).then(() => {
+                setSelectedBusId('');
+                refetch();
+                setLoading(false);
+              }).catch((error) => {
+                handleSubmitError(error);
+              });
+            });
+          });
+          return; // Early return - async geocoding will handle save
         }
       }
 
@@ -175,34 +254,39 @@ export function BusEdit() {
       setSelectedBusId('');
       refetch();
     } catch (error) {
-      // Extract error message and sanitize to prevent displaying raw JSON
-      let errorMessage = 'Failed to update bus location';
-      
-      if (error instanceof Error) {
-        const rawMessage = error.message.trim();
-        
-        // Check if error message is JSON and sanitize it
-        if (rawMessage.startsWith('{') || rawMessage.startsWith('[')) {
-          try {
-            const parsed = JSON.parse(rawMessage);
-            errorMessage = parsed.message || 'Failed to update bus location. Please try again.';
-          } catch {
-            errorMessage = 'Failed to update bus location. Please try again.';
-          }
-        } else if (rawMessage.includes('"success"') || rawMessage.includes('"message"')) {
-          errorMessage = 'Failed to update bus location. Please try again.';
-        } else {
-          errorMessage = rawMessage;
-        }
-      }
-      
-      setMessage({
-        type: 'error',
-        text: errorMessage,
-      });
+      handleSubmitError(error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSubmitError = (error: unknown) => {
+    // Extract error message and sanitize to prevent displaying raw JSON
+    let errorMessage = 'Failed to update bus location';
+    
+    if (error instanceof Error) {
+      const rawMessage = error.message.trim();
+      
+      // Check if error message is JSON and sanitize it
+      if (rawMessage.startsWith('{') || rawMessage.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(rawMessage);
+          errorMessage = parsed.message || 'Failed to update bus location. Please try again.';
+        } catch {
+          errorMessage = 'Failed to update bus location. Please try again.';
+        }
+      } else if (rawMessage.includes('"success"') || rawMessage.includes('"message"')) {
+        errorMessage = 'Failed to update bus location. Please try again.';
+      } else {
+        errorMessage = rawMessage;
+      }
+    }
+    
+    setMessage({
+      type: 'error',
+      text: errorMessage,
+    });
+    setLoading(false);
   };
 
   return (
@@ -258,49 +342,49 @@ export function BusEdit() {
 
             {selectedBusId && (
               <>
-                {/* Map with draggable pin - always show when bus is selected */}
+                {/* Bus Number (read-only) */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Bus Location (drag pin to adjust)
+                    Bus Number <span className="text-red-500">*</span>
                   </label>
-                  {busLocation ? (
-                    <>
-                      <div className="h-[300px] md:h-[400px]">
-                        <EditableLocationMap
-                          initialPosition={busLocation}
-                          onPositionChange={(newPosition) => {
-                            setBusLocation(newPosition);
-                          }}
-                          onGeocodeResult={handleGeocodeResult}
-                          apiKey={GOOGLE_MAPS_API_KEY || ''}
-                          height="100%"
-                        />
-                      </div>
-                      <p className="mt-2 text-xs md:text-sm text-gray-500">
-                        Drag the pin to change the location. Street fields will update automatically.
-                      </p>
-                    </>
-                  ) : (
-                    <div className="h-[300px] md:h-[400px] bg-gray-100 rounded-lg flex items-center justify-center">
-                      <p className="text-gray-500 text-sm md:text-base">Loading map...</p>
-                    </div>
-                  )}
+                  <input
+                    type="text"
+                    value={busNumber}
+                    disabled
+                    className="w-full p-3 border border-gray-300 rounded-lg bg-gray-100 text-gray-600"
+                  />
                 </div>
 
-                {/* Form Fields */}
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Bus Number <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={busNumber}
-                      disabled
-                      className="w-full p-3 border border-gray-300 rounded-lg bg-gray-100 text-gray-600"
-                    />
-                  </div>
+                {/* Tab Toggle */}
+                <div className="mb-4 md:mb-6 flex gap-2 border-b border-gray-200">
+                  <button
+                    onClick={handleLocationMode}
+                    className={`px-3 md:px-4 py-2 font-medium transition-colors text-sm md:text-base ${
+                      entryMode === 'location'
+                        ? 'border-b-2 border-primary-500 text-primary-700'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    Use Current Location
+                  </button>
+                  <button
+                    onClick={() => {
+                      setEntryMode('manual');
+                      setSelectedLocation(null);
+                      setFullAddress('');
+                    }}
+                    className={`px-3 md:px-4 py-2 font-medium transition-colors text-sm md:text-base ${
+                      entryMode === 'manual'
+                        ? 'border-b-2 border-primary-500 text-primary-700'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    Manual Entry
+                  </button>
+                </div>
 
+                {/* Manual Entry Mode */}
+                {entryMode === 'manual' && (
                   <StreetSelector
                     mainStreet={mainStreet}
                     primaryCrossStreet={primaryCrossStreet}
@@ -309,16 +393,77 @@ export function BusEdit() {
                     onPrimaryCrossStreetChange={setPrimaryCrossStreet}
                     onSecondaryCrossStreetChange={setSecondaryCrossStreet}
                   />
+                )}
 
-                  <button
-                    type="button"
-                    onClick={handleSubmit}
-                    disabled={loading}
-                    className="w-full px-6 py-3 bg-primary-500 text-white rounded-lg hover:bg-primary-600 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {loading ? 'Updating...' : 'Update Bus Location'}
-                  </button>
-                </div>
+                {/* Location Mode */}
+                {entryMode === 'location' && (
+                  <div className="space-y-4">
+                    <div>
+                      {!currentPosition && !selectedLocation && !busLocation && (
+                        <div className="mb-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                          <p className="text-xs md:text-sm text-blue-700 mb-2">
+                            💡 Map is showing San Francisco center. Click "Get Current Location" to use your location, or drag the pin to set a location.
+                          </p>
+                          <button
+                            onClick={getCurrentPosition}
+                            disabled={geoLoading}
+                            className="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                          >
+                            {geoLoading ? 'Getting location...' : 'Get Current Location'}
+                          </button>
+                        </div>
+                      )}
+                      <p className="text-xs md:text-sm text-gray-600 mb-2">
+                        Drag the pin to adjust the location. The address will be automatically detected.
+                      </p>
+                      <div className="h-[300px] md:h-[400px]">
+                        <EditableLocationMap
+                          initialPosition={mapLocation}
+                          onPositionChange={(pos: { lat: number; lng: number }) => {
+                            setSelectedLocation(pos);
+                            setFullAddress('');
+                          }}
+                          onGeocodeResult={handleGeocodeResult}
+                          apiKey={GOOGLE_MAPS_API_KEY || ''}
+                          height="100%"
+                        />
+                      </div>
+                    </div>
+                    {fullAddress && (
+                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <p className="text-sm font-medium text-gray-700 mb-1">Detected Address:</p>
+                        <p className="text-gray-900">{fullAddress}</p>
+                        {mainStreet && (
+                          <div className="mt-2 text-sm text-gray-600">
+                            <span className="font-medium">Main Street:</span> {mainStreet}
+                            {primaryCrossStreet && (
+                              <>
+                                <br />
+                                <span className="font-medium">Cross Street:</span> {primaryCrossStreet}
+                              </>
+                            )}
+                            {secondaryCrossStreet && (
+                              <>
+                                <br />
+                                <span className="font-medium">Secondary Cross Street:</span> {secondaryCrossStreet}
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Submit Button */}
+                <button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={loading || (entryMode === 'location' && !selectedLocation && !currentPosition && !busLocation) || (entryMode === 'manual' && !mainStreet)}
+                  className="w-full px-6 py-3 bg-primary-500 text-white rounded-lg hover:bg-primary-600 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? 'Updating...' : 'Update Bus Location'}
+                </button>
               </>
             )}
           </div>
