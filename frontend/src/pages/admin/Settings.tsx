@@ -41,11 +41,16 @@ export function Settings() {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteSuccess, setDeleteSuccess] = useState(false);
+  const [isSuperadmin, setIsSuperadmin] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
     // Load settings on mount
     setSettings(getSettings());
+    
+    // Check if current user is superadmin
+    const superadminFlag = sessionStorage.getItem('isSuperadmin');
+    setIsSuperadmin(superadminFlag === 'true');
   }, []);
 
   const handleDefaultEntryModeChange = (mode: EntryMode) => {
@@ -156,55 +161,57 @@ export function Settings() {
               </div>
             </div>
 
-            {/* Delete All Buses Section */}
-            <div className="border-b border-gray-200 pb-6">
-              <h2 className="text-lg md:text-xl font-semibold text-red-700 mb-3">Danger Zone</h2>
-              
-              {deleteError && (
-                <div className="mb-4 p-3 md:p-4 rounded-lg bg-red-100 border border-red-400 text-red-700 text-sm md:text-base">
-                  {deleteError}
-                </div>
-              )}
-
-              {deleteSuccess && (
-                <div className="mb-4 p-3 md:p-4 rounded-lg bg-green-100 border border-green-400 text-green-700 text-sm md:text-base">
-                  All buses have been deleted successfully. Redirecting...
-                </div>
-              )}
-
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 md:p-6 mb-4">
-                <div className="flex items-start">
-                  <div className="flex-shrink-0">
-                    <svg className="h-5 w-5 md:h-6 md:w-6 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                    </svg>
+            {/* Delete All Buses Section - Only visible to superadmin */}
+            {isSuperadmin && (
+              <div className="border-b border-gray-200 pb-6">
+                <h2 className="text-lg md:text-xl font-semibold text-red-700 mb-3">Danger Zone</h2>
+                
+                {deleteError && (
+                  <div className="mb-4 p-3 md:p-4 rounded-lg bg-red-100 border border-red-400 text-red-700 text-sm md:text-base">
+                    {deleteError}
                   </div>
-                  <div className="ml-3">
-                    <h3 className="text-base md:text-lg font-medium text-yellow-800">Warning</h3>
-                    <div className="mt-2 text-xs md:text-sm text-yellow-700">
-                      <p className="mb-2">
-                        This action will permanently delete <strong>all {buses.length} buses</strong> from the database.
-                      </p>
-                      <p>This action cannot be undone. Make sure you have a backup if needed.</p>
+                )}
+
+                {deleteSuccess && (
+                  <div className="mb-4 p-3 md:p-4 rounded-lg bg-green-100 border border-green-400 text-green-700 text-sm md:text-base">
+                    All buses have been deleted successfully. Redirecting...
+                  </div>
+                )}
+
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 md:p-6 mb-4">
+                  <div className="flex items-start">
+                    <div className="flex-shrink-0">
+                      <svg className="h-5 w-5 md:h-6 md:w-6 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                    </div>
+                    <div className="ml-3">
+                      <h3 className="text-base md:text-lg font-medium text-yellow-800">Warning</h3>
+                      <div className="mt-2 text-xs md:text-sm text-yellow-700">
+                        <p className="mb-2">
+                          This action will permanently delete <strong>all {buses.length} buses</strong> from the database.
+                        </p>
+                        <p>This action cannot be undone. Make sure you have a backup if needed.</p>
+                      </div>
                     </div>
                   </div>
                 </div>
+
+                <button
+                  onClick={handleDeleteAll}
+                  disabled={deleteLoading || buses.length === 0}
+                  className="w-full px-4 md:px-6 py-2 md:py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm md:text-base"
+                >
+                  {deleteLoading ? 'Deleting...' : `Delete All ${buses.length} Buses`}
+                </button>
+
+                {buses.length === 0 && (
+                  <div className="mt-4 p-3 md:p-4 bg-gray-50 rounded-lg text-center text-gray-600 text-sm md:text-base">
+                    No buses to delete.
+                  </div>
+                )}
               </div>
-
-              <button
-                onClick={handleDeleteAll}
-                disabled={deleteLoading || buses.length === 0}
-                className="w-full px-4 md:px-6 py-2 md:py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm md:text-base"
-              >
-                {deleteLoading ? 'Deleting...' : `Delete All ${buses.length} Buses`}
-              </button>
-
-              {buses.length === 0 && (
-                <div className="mt-4 p-3 md:p-4 bg-gray-50 rounded-lg text-center text-gray-600 text-sm md:text-base">
-                  No buses to delete.
-                </div>
-              )}
-            </div>
+            )}
           </div>
         </div>
       </div>

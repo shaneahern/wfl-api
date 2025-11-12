@@ -32,11 +32,20 @@ export default defineConfig({
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
+      // Proxy admin API endpoints to backend
+      '/admin/verify': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
+      '/admin/debug-auth': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
       '/admin/delete-all-buses': {
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
-      // Note: Other /admin routes are handled by React Router, not proxied to backend
+      // Note: Other /admin routes (like /admin/login, /admin/add, etc.) are handled by React Router
     },
   },
 })

@@ -43,10 +43,6 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "wfl2026")
 SUPERADMIN_USERNAME = os.environ.get("SUPERADMIN_USERNAME", "superadmin")
 SUPERADMIN_PASSWORD = os.environ.get("SUPERADMIN_PASSWORD", "wfl2027")
 
-# Log credentials on startup (for debugging - remove in production)
-logger.info(f"Admin credentials configured: username={ADMIN_USERNAME}")
-logger.info(f"Superadmin credentials configured: username={SUPERADMIN_USERNAME}")
-
 
 def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
     """Verify admin credentials using HTTP Basic Auth."""
@@ -81,32 +77,25 @@ def verify_admin_or_superadmin(credentials: HTTPBasicCredentials = Depends(secur
     username = credentials.username
     password = credentials.password
     
-    # Debug logging
-    logger.info(f"Authentication attempt: username={username}, configured_admin={ADMIN_USERNAME}, configured_superadmin={SUPERADMIN_USERNAME}")
-    
     # Check superadmin first
-    is_superadmin_username = secrets.compare_digest(username, SUPERADMIN_USERNAME)
-    is_superadmin_password = secrets.compare_digest(password, SUPERADMIN_PASSWORD)
-    is_superadmin = is_superadmin_username and is_superadmin_password
-    
-    logger.info(f"Superadmin check: username_match={is_superadmin_username}, password_match={is_superadmin_password}, result={is_superadmin}")
+    is_superadmin = (
+        secrets.compare_digest(username, SUPERADMIN_USERNAME) and
+        secrets.compare_digest(password, SUPERADMIN_PASSWORD)
+    )
     
     # Check regular admin
-    is_admin_username = secrets.compare_digest(username, ADMIN_USERNAME)
-    is_admin_password = secrets.compare_digest(password, ADMIN_PASSWORD)
-    is_admin = is_admin_username and is_admin_password
-    
-    logger.info(f"Admin check: username_match={is_admin_username}, password_match={is_admin_password}, result={is_admin}")
+    is_admin = (
+        secrets.compare_digest(username, ADMIN_USERNAME) and
+        secrets.compare_digest(password, ADMIN_PASSWORD)
+    )
     
     if not (is_superadmin or is_admin):
-        logger.warning(f"Authentication failed for username: {username} (admin_match={is_admin}, superadmin_match={is_superadmin})")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials",
             headers={"WWW-Authenticate": "Basic"},
         )
     
-    logger.info(f"Authentication successful: username={username}, is_superadmin={is_superadmin}")
     return username
 
 
@@ -397,7 +386,6 @@ async def wfl_endpoint(
 async def verify_admin_endpoint(username: str = Depends(verify_admin_or_superadmin)):
     """Verify admin or superadmin credentials. Returns success and username if authenticated."""
     is_superadmin = username == SUPERADMIN_USERNAME
-    logger.info(f"Verification successful for {username}, isSuperadmin={is_superadmin}")
     return JSONResponse(content={
         "success": True,
         "authenticated": True,
@@ -406,21 +394,25 @@ async def verify_admin_endpoint(username: str = Depends(verify_admin_or_superadm
     })
 
 
-@app.get("/admin/debug-auth")
-async def debug_auth():
-    """Debug endpoint to check configured credentials (without requiring auth)."""
-    return JSONResponse(content={
-        "admin_username": ADMIN_USERNAME,
-        "superadmin_username": SUPERADMIN_USERNAME,
-        "admin_password_set": bool(ADMIN_PASSWORD),
-        "superadmin_password_set": bool(SUPERADMIN_PASSWORD),
-        "note": "This endpoint shows configured usernames only, not passwords"
-    })
-
-
 @app.delete("/admin/delete-all-buses")
-async def delete_all_buses(username: str = Depends(verify_superadmin)):
+async def delete_all_buses(credentials: HTTPBasicCredentials = Depends(security)):
     """Delete all bus documents from Firestore. Superadmin only."""
+    # Explicit superadmin check - verify both username and password
+    username = credentials.username
+    password = credentials.password
+    
+    is_superadmin = (
+        secrets.compare_digest(username, SUPERADMIN_USERNAME) and
+        secrets.compare_digest(password, SUPERADMIN_PASSWORD)
+    )
+    
+    if not is_superadmin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This operation requires superadmin privileges",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    
     try:
         buses_ref = db.collection("Bus")
         buses = buses_ref.stream()
@@ -430,7 +422,7 @@ async def delete_all_buses(username: str = Depends(verify_superadmin)):
             bus.reference.delete()
             deleted_count += 1
         
-        logger.info(f"Deleted {deleted_count} bus documents")
+        logger.info(f"Superadmin {username} deleted {deleted_count} bus documents")
         return JSONResponse(content={
             "success": True,
             "message": f"Deleted {deleted_count} bus documents"
