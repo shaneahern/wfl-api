@@ -19,7 +19,7 @@
         }
         
         .container {
-            max-width: 600px;
+            max-width: 800px;
             margin: 0 auto;
             background: white;
             border-radius: 12px;
@@ -211,6 +211,26 @@
             color: #999;
             padding: 20px;
         }
+        
+        .map-container {
+            width: 100%;
+            height: 400px;
+            border-radius: 6px;
+            border: 2px solid #e0e0e0;
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+        
+        .map-container.disabled {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+        
+        .map-info {
+            font-size: 12px;
+            color: #666;
+            margin-top: 4px;
+        }
     </style>
 </head>
 <body>
@@ -252,6 +272,14 @@
                 <div class="help-text">Second intersecting street (optional)</div>
             </div>
             
+            <div class="form-group">
+                <label>Location Map</label>
+                <div id="map" class="map-container disabled"></div>
+                <div class="map-info">Select primary street and cross street to enable map. Drag the pin to adjust the precise location.</div>
+                <input type="hidden" id="latitude" name="latitude">
+                <input type="hidden" id="longitude" name="longitude">
+            </div>
+            
             <div class="button-group">
                 <button type="submit" class="btn-primary">Save Bus Location</button>
                 <button type="button" class="btn-secondary" onclick="loadBuses()">Refresh List</button>
@@ -266,11 +294,112 @@
     
     <script>
         let streetData = {};
+        let map = null;
+        let marker = null;
+        let geocoder = null;
+        let googleMapsApiKey = '';
         
         window.addEventListener('DOMContentLoaded', async () => {
+            await loadGoogleMapsApiKey();
             await loadStreets();
             loadBuses();
         });
+        
+        // Make initMap global so Google Maps callback can access it
+        window.initMap = function() {
+            // San Francisco downtown center
+            const sfCenter = { lat: 37.7749, lng: -122.4194 };
+            
+            if (typeof google === 'undefined' || !google.maps) {
+                console.error('Google Maps API not loaded');
+                return;
+            }
+            
+            map = new google.maps.Map(document.getElementById('map'), {
+                center: sfCenter,
+                zoom: 15,
+                mapTypeControl: true,
+                streetViewControl: true,
+                fullscreenControl: true
+            });
+            
+            geocoder = new google.maps.Geocoder();
+            
+            // Create initial marker (not draggable until streets are selected)
+            marker = new google.maps.Marker({
+                position: sfCenter,
+                map: map,
+                draggable: false,
+                title: 'Bus Location',
+                animation: google.maps.Animation.DROP
+            });
+            
+            // Update hidden inputs when marker is dragged
+            marker.addListener('dragend', function() {
+                const position = marker.getPosition();
+                document.getElementById('latitude').value = position.lat();
+                document.getElementById('longitude').value = position.lng();
+            });
+        };
+        
+        async function loadGoogleMapsApiKey() {
+            try {
+                const response = await fetch('/admin/google-maps-api-key');
+                const data = await response.json();
+                googleMapsApiKey = data.api_key || '';
+                
+                if (googleMapsApiKey) {
+                    // Load Google Maps script
+                    const script = document.createElement('script');
+                    script.src = `https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&libraries=places&callback=initMap`;
+                    script.async = true;
+                    script.defer = true;
+                    document.head.appendChild(script);
+                } else {
+                    console.warn('Google Maps API key not configured');
+                    document.getElementById('map').innerHTML = '<div style="padding: 20px; text-align: center; color: #999;">Google Maps API key not configured. Set GOOGLE_MAPS_API_KEY environment variable.</div>';
+                }
+            } catch (error) {
+                console.error('Error loading Google Maps API key:', error);
+            }
+        }
+        
+        async function geocodeIntersection(mainStreet, primaryCrossStreet) {
+            if (!geocoder || !marker || !map) return;
+            
+            // Build address string for geocoding
+            const address = `${mainStreet} & ${primaryCrossStreet}, San Francisco, CA`;
+            
+            geocoder.geocode({ address: address }, (results, status) => {
+                if (status === 'OK' && results[0]) {
+                    const location = results[0].geometry.location;
+                    const lat = location.lat();
+                    const lng = location.lng();
+                    
+                    // Move marker to intersection
+                    marker.setPosition({ lat, lng });
+                    map.setCenter({ lat, lng });
+                    map.setZoom(18); // Zoom in for precise location
+                    
+                    // Enable dragging
+                    marker.setDraggable(true);
+                    
+                    // Update hidden inputs
+                    document.getElementById('latitude').value = lat;
+                    document.getElementById('longitude').value = lng;
+                    
+                    // Enable map container
+                    document.getElementById('map').classList.remove('disabled');
+                } else {
+                    console.warn('Geocoding failed:', status);
+                    // Still enable dragging if we have a location
+                    if (marker.getPosition()) {
+                        marker.setDraggable(true);
+                        document.getElementById('map').classList.remove('disabled');
+                    }
+                }
+            });
+        }
         
         async function loadStreets() {
             try {
@@ -307,10 +436,15 @@
                     updateCrossStreets();
                     // Clear secondary when main street changes
                     document.getElementById('secondary_cross_street').innerHTML = '<option value="">-- Select Cross Street --</option>';
+                    // Reset map when main street changes
+                    resetMap();
                 });
                 
-                // Add change listener to primary cross street to update secondary
-                document.getElementById('primary_cross_street').addEventListener('change', updateSecondaryCrossStreets);
+                // Add change listener to primary cross street to update secondary and geocode
+                document.getElementById('primary_cross_street').addEventListener('change', () => {
+                    updateSecondaryCrossStreets();
+                    geocodeIfReady();
+                });
             } catch (error) {
                 console.error('Error loading streets:', error);
             }
@@ -368,6 +502,34 @@
             }
         }
         
+        function geocodeIfReady() {
+            const mainStreet = document.getElementById('main_street').value;
+            const primaryCrossStreet = document.getElementById('primary_cross_street').value;
+            
+            if (mainStreet && primaryCrossStreet && geocoder) {
+                geocodeIntersection(mainStreet, primaryCrossStreet);
+            } else {
+                resetMap();
+            }
+        }
+        
+        function resetMap() {
+            if (marker) {
+                marker.setDraggable(false);
+                document.getElementById('map').classList.add('disabled');
+                document.getElementById('latitude').value = '';
+                document.getElementById('longitude').value = '';
+                
+                // Reset to SF center
+                const sfCenter = { lat: 37.7749, lng: -122.4194 };
+                marker.setPosition(sfCenter);
+                if (map) {
+                    map.setCenter(sfCenter);
+                    map.setZoom(15);
+                }
+            }
+        }
+        
         function showMessage(text, type) {
             const messageEl = document.getElementById('message');
             messageEl.textContent = text;
@@ -382,9 +544,32 @@
             const formData = new FormData(form);
             const params = new URLSearchParams();
             for (const [key, value] of formData.entries()) {
-                if (value.trim()) params.append(key, value.trim());
+                // Only include non-empty values, but always include lat/long if they exist
+                if (value && value.trim()) {
+                    params.append(key, value.trim());
+                } else if ((key === 'latitude' || key === 'longitude') && value) {
+                    params.append(key, value);
+                }
             }
-            window.location.href = '/wfl?' + params.toString();
+            
+            // Use fetch instead of window.location to handle JSON response
+            fetch('/wfl?' + params.toString())
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showMessage('Bus location saved successfully!', 'success');
+                        // Reset form
+                        form.reset();
+                        resetMap();
+                        loadBuses();
+                    } else {
+                        showMessage('Failed to save bus location. Please try again.', 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    showMessage('Failed to save bus location. Please try again.', 'error');
+                });
         }
         
         async function loadBuses() {

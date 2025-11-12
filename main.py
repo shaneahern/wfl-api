@@ -394,6 +394,13 @@ async def verify_admin_endpoint(username: str = Depends(verify_admin_or_superadm
     })
 
 
+@app.get("/admin/google-maps-api-key")
+async def get_google_maps_api_key():
+    """Get Google Maps API key from environment variable."""
+    api_key = os.environ.get("GOOGLE_MAPS_API_KEY", "")
+    return JSONResponse(content={"api_key": api_key})
+
+
 @app.delete("/admin/delete-all-buses")
 async def delete_all_buses(credentials: HTTPBasicCredentials = Depends(security)):
     """Delete all bus documents from Firestore. Superadmin only."""

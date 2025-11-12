@@ -13,5 +13,7 @@
 			"path": "../busfinder"
 		}
 	],
-	"settings": {}
+	"settings": {
+		"java.compile.nullAnalysis.mode": "automatic"
+	}
 }

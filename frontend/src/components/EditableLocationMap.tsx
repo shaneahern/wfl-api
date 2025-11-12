@@ -21,7 +21,7 @@ const mapContainerStyle = {
 };
 
 const mapOptions = {
-  zoom: 16,
+  zoom: 18,
   mapId: 'DEMO_MAP_ID', // Required for AdvancedMarkerElement
   // Note: styles are controlled via cloud console when mapId is present
 };

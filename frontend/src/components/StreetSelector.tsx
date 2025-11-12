@@ -23,11 +23,18 @@ export function StreetSelector({
 }: StreetSelectorProps) {
   const [streetData, setStreetData] = useState<StreetData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     api.getStreets()
-      .then(setStreetData)
-      .catch(console.error)
+      .then((data) => {
+        setStreetData(data);
+        setError(null);
+      })
+      .catch((err) => {
+        console.error('Failed to load streets:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load streets');
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -38,8 +45,40 @@ export function StreetSelector({
     }
   }, [mainStreet, primaryCrossStreet]);
 
-  if (loading || !streetData) {
+  if (loading) {
     return <div className="text-gray-500">Loading streets...</div>;
+  }
+
+  if (error) {
+    return (
+      <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+        <p className="text-red-700 text-sm font-medium">Error loading streets</p>
+        <p className="text-red-600 text-xs mt-1">{error}</p>
+        <button
+          onClick={() => {
+            setLoading(true);
+            setError(null);
+            api.getStreets()
+              .then((data) => {
+                setStreetData(data);
+                setError(null);
+              })
+              .catch((err) => {
+                console.error('Failed to load streets:', err);
+                setError(err instanceof Error ? err.message : 'Failed to load streets');
+              })
+              .finally(() => setLoading(false));
+          }}
+          className="mt-2 px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  if (!streetData) {
+    return <div className="text-gray-500">No street data available</div>;
   }
 
   const primaryOptions = mainStreet && streetData.cross_streets[mainStreet]

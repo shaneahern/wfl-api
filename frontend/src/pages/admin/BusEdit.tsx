@@ -25,6 +25,7 @@ export function BusEdit() {
   const [secondaryCrossStreet, setSecondaryCrossStreet] = useState('');
   const [busLocation, setBusLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [selectedLocation, setSelectedLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [manualLocation, setManualLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [fullAddress, setFullAddress] = useState<string>('');
   const [city, setCity] = useState<string>('');
   const [loading, setLoading] = useState(false);
@@ -61,11 +62,17 @@ export function BusEdit() {
             lat: bus.latitude,
             lng: bus.longitude,
           });
+          // Also set manualLocation in case user switches to manual mode
+          setManualLocation({
+            lat: bus.latitude,
+            lng: bus.longitude,
+          });
         } else {
           // Default to manual mode if no coordinates
           setEntryMode('manual');
           setBusLocation(null);
           setSelectedLocation(null);
+          setManualLocation(null);
         }
       }
     } else {
@@ -118,19 +125,78 @@ export function BusEdit() {
     city?: string;
   }) => {
     setFullAddress(result.fullAddress);
-    if (result.mainStreet) {
-      setMainStreet(result.mainStreet);
+    
+    // Only update street fields in location mode (not manual mode)
+    // In manual mode, user has explicitly selected streets, so don't overwrite them
+    if (entryMode === 'location') {
+      if (result.mainStreet) {
+        setMainStreet(result.mainStreet);
+      }
+      if (result.primaryCrossStreet) {
+        setPrimaryCrossStreet(result.primaryCrossStreet);
+      }
+      if (result.secondaryCrossStreet) {
+        setSecondaryCrossStreet(result.secondaryCrossStreet);
+      }
     }
-    if (result.primaryCrossStreet) {
-      setPrimaryCrossStreet(result.primaryCrossStreet);
-    }
-    if (result.secondaryCrossStreet) {
-      setSecondaryCrossStreet(result.secondaryCrossStreet);
-    }
+    
     if (result.city) {
       setCity(result.city);
     }
   };
+
+  // Geocode intersection when main street and primary cross street are selected in manual mode
+  useEffect(() => {
+    if (entryMode === 'manual' && mainStreet && primaryCrossStreet) {
+      // Wait for Google Maps to be available
+      const waitForGoogleMaps = (callback: () => void, maxAttempts = 50) => {
+        if (typeof google !== 'undefined' && google.maps && google.maps.Geocoder) {
+          callback();
+        } else if (maxAttempts > 0) {
+          setTimeout(() => waitForGoogleMaps(callback, maxAttempts - 1), 100);
+        } else {
+          // Timeout - use default SF location
+          setManualLocation({ lat: 37.7749, lng: -122.4194 });
+        }
+      };
+
+      waitForGoogleMaps(() => {
+        const geocoder = new google.maps.Geocoder();
+        const mainStreetClean = mainStreet.replace(/\s*\([^)]*\)\s*/g, '').trim();
+        
+        // Try "and" format first
+        const addressToGeocode = `${mainStreetClean} and ${primaryCrossStreet}, San Francisco, CA`;
+        
+        geocoder.geocode({ address: addressToGeocode }, (results, status) => {
+          if (status === 'OK' && results && results[0]) {
+            const location = results[0].geometry.location;
+            setManualLocation({
+              lat: location.lat(),
+              lng: location.lng(),
+            });
+          } else {
+            // Try alternative format with "&"
+            const alternativeAddress = `${mainStreetClean} & ${primaryCrossStreet}, San Francisco, CA`;
+            geocoder.geocode({ address: alternativeAddress }, (altResults, altStatus) => {
+              if (altStatus === 'OK' && altResults && altResults[0]) {
+                const location = altResults[0].geometry.location;
+                setManualLocation({
+                  lat: location.lat(),
+                  lng: location.lng(),
+                });
+              } else {
+                // If geocoding fails, use default SF location
+                setManualLocation({ lat: 37.7749, lng: -122.4194 });
+              }
+            });
+          }
+        });
+      });
+    } else if (entryMode === 'manual' && (!mainStreet || !primaryCrossStreet)) {
+      // Reset to SF center if streets are cleared
+      setManualLocation(null);
+    }
+  }, [entryMode, mainStreet, primaryCrossStreet]);
 
   // Determine location to show on map
   // Default to San Francisco center if no location is available
@@ -185,8 +251,9 @@ export function BusEdit() {
         secondary_cross_street: secondaryCrossStreet || undefined,
       };
 
-      // If saving from location mode, include coordinates and city
+      // Add coordinates and city if saving from location mode or manual mode with map location
       if (entryMode === 'location') {
+        // Use selectedLocation if available (user dragged pin), otherwise use currentPosition
         const locationToSave = selectedLocation || (currentPosition ? {
           lat: currentPosition.latitude,
           lng: currentPosition.longitude,
@@ -199,8 +266,15 @@ export function BusEdit() {
             busData.city = city;
           }
         }
+      } else if (entryMode === 'manual' && manualLocation) {
+        // For manual mode, use the location from the map if available
+        busData.latitude = manualLocation.lat;
+        busData.longitude = manualLocation.lng;
+        if (city) {
+          busData.city = city;
+        }
       } else {
-        // For manual entry, geocode the address to get coordinates
+        // For manual entry without map location, geocode the address to get coordinates
         // Wait for Google Maps to be available (it will be loaded by EditableLocationMap if needed)
         const waitForGoogleMaps = (callback: () => void, maxAttempts = 50) => {
           if (typeof google !== 'undefined' && google.maps && google.maps.Geocoder) {
@@ -372,6 +446,10 @@ export function BusEdit() {
                       setEntryMode('manual');
                       setSelectedLocation(null);
                       setFullAddress('');
+                      // Reset manualLocation if streets are not selected
+                      if (!mainStreet || !primaryCrossStreet) {
+                        setManualLocation(null);
+                      }
                     }}
                     className={`px-3 md:px-4 py-2 font-medium transition-colors text-sm md:text-base ${
                       entryMode === 'manual'
@@ -385,14 +463,48 @@ export function BusEdit() {
 
                 {/* Manual Entry Mode */}
                 {entryMode === 'manual' && (
-                  <StreetSelector
-                    mainStreet={mainStreet}
-                    primaryCrossStreet={primaryCrossStreet}
-                    secondaryCrossStreet={secondaryCrossStreet}
-                    onMainStreetChange={setMainStreet}
-                    onPrimaryCrossStreetChange={setPrimaryCrossStreet}
-                    onSecondaryCrossStreetChange={setSecondaryCrossStreet}
-                  />
+                  <>
+                    <StreetSelector
+                      mainStreet={mainStreet}
+                      primaryCrossStreet={primaryCrossStreet}
+                      secondaryCrossStreet={secondaryCrossStreet}
+                      onMainStreetChange={setMainStreet}
+                      onPrimaryCrossStreetChange={setPrimaryCrossStreet}
+                      onSecondaryCrossStreetChange={setSecondaryCrossStreet}
+                    />
+                    
+                    {/* Map for manual entry - show when streets are selected */}
+                    {mainStreet && primaryCrossStreet && (
+                      <div className="space-y-2">
+                        <label className="block text-sm font-medium text-gray-700">
+                          Location Map
+                        </label>
+                        <p className="text-xs text-gray-600 mb-2">
+                          Pin shows the intersection. Drag it to adjust the precise location.
+                        </p>
+                        <div className="h-[300px] md:h-[400px]">
+                          <EditableLocationMap
+                            initialPosition={manualLocation || { lat: 37.7749, lng: -122.4194 }}
+                            onPositionChange={(pos: { lat: number; lng: number }) => {
+                              setManualLocation(pos);
+                            }}
+                            onGeocodeResult={handleGeocodeResult}
+                            apiKey={GOOGLE_MAPS_API_KEY || ''}
+                            height="100%"
+                          />
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Show message when streets not selected */}
+                    {(!mainStreet || !primaryCrossStreet) && (
+                      <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                        <p className="text-sm text-blue-700">
+                          Select a main street and primary cross street to see the map and set the precise location.
+                        </p>
+                      </div>
+                    )}
+                  </>
                 )}
 
                 {/* Location Mode */}

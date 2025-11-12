@@ -1,6 +1,13 @@
 import type { Bus, StreetData } from '../types';
 
+// Use empty string for relative URLs when served from same origin as backend
+// This works when the React app is built and served from the backend
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+
+// Log API base URL for debugging (only in development)
+if (import.meta.env.DEV) {
+  console.log('API_BASE_URL:', API_BASE_URL || '(empty - using relative URLs)');
+}
 
 export const api = {
   /**
@@ -99,10 +106,41 @@ export const api = {
    * Get street data for dropdowns
    */
   async getStreets(): Promise<StreetData> {
-    const response = await fetch(`${API_BASE_URL}/streets`);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch streets: ${response.statusText}`);
+    const url = `${API_BASE_URL}/streets`;
+    console.log('Fetching streets from:', url);
+    
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'Accept': 'application/json',
+        },
+      });
+      
+      console.log('Streets response:', { 
+        ok: response.ok, 
+        status: response.status, 
+        statusText: response.statusText,
+        url: response.url 
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Streets API error response:', errorText);
+        throw new Error(`Failed to fetch streets: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      console.log('Streets data received:', { 
+        hasMainStreets: !!data.main_streets, 
+        mainStreetsCount: data.main_streets?.length || 0 
+      });
+      return data;
+    } catch (error) {
+      console.error('Error fetching streets:', error);
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Failed to fetch streets: Unknown error');
     }
-    return response.json();
   },
 };
