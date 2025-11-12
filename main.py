@@ -394,11 +394,25 @@ async def wfl_endpoint(
 @app.get("/admin/verify")
 async def verify_admin_endpoint(username: str = Depends(verify_admin_or_superadmin)):
     """Verify admin or superadmin credentials. Returns success and username if authenticated."""
+    is_superadmin = username == SUPERADMIN_USERNAME
+    logger.info(f"Verification successful for {username}, isSuperadmin={is_superadmin}")
     return JSONResponse(content={
         "success": True,
         "authenticated": True,
         "username": username,
-        "isSuperadmin": username == SUPERADMIN_USERNAME
+        "isSuperadmin": is_superadmin
+    })
+
+
+@app.get("/admin/debug-auth")
+async def debug_auth():
+    """Debug endpoint to check configured credentials (without requiring auth)."""
+    return JSONResponse(content={
+        "admin_username": ADMIN_USERNAME,
+        "superadmin_username": SUPERADMIN_USERNAME,
+        "admin_password_set": bool(ADMIN_PASSWORD),
+        "superadmin_password_set": bool(SUPERADMIN_PASSWORD),
+        "note": "This endpoint shows configured usernames only, not passwords"
     })
 
 
