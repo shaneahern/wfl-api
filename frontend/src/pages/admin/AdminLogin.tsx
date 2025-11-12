@@ -26,13 +26,20 @@ export function AdminLogin() {
           credentials: 'omit', // Prevent browser from handling auth automatically
         });
         if (response.ok) {
+          const data = await response.json();
+          sessionStorage.setItem('adminUsername', data.username || '');
+          sessionStorage.setItem('isSuperadmin', String(data.isSuperadmin || false));
           navigate(from, { replace: true });
         } else {
           sessionStorage.removeItem('adminAuth');
+          sessionStorage.removeItem('adminUsername');
+          sessionStorage.removeItem('isSuperadmin');
         }
       } catch {
         // Not authenticated, show login form
         sessionStorage.removeItem('adminAuth');
+        sessionStorage.removeItem('adminUsername');
+        sessionStorage.removeItem('isSuperadmin');
       }
     };
     checkAuth();
@@ -56,8 +63,11 @@ export function AdminLogin() {
       });
 
       if (response.ok) {
-        // Success - store credentials and navigate to admin page
+        // Success - store credentials and user info
+        const data = await response.json();
         sessionStorage.setItem('adminAuth', authHeader);
+        sessionStorage.setItem('adminUsername', data.username || username);
+        sessionStorage.setItem('isSuperadmin', String(data.isSuperadmin || false));
         navigate(from, { replace: true });
       } else if (response.status === 401) {
         setError('Invalid username or password');

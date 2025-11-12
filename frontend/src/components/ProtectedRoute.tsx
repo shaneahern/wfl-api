@@ -34,8 +34,14 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
         
         if (response.status === 401) {
           sessionStorage.removeItem('adminAuth');
+          sessionStorage.removeItem('adminUsername');
+          sessionStorage.removeItem('isSuperadmin');
           setIsAuthenticated(false);
         } else if (response.ok) {
+          // Store user info from response
+          const data = await response.json();
+          sessionStorage.setItem('adminUsername', data.username || '');
+          sessionStorage.setItem('isSuperadmin', String(data.isSuperadmin || false));
           setIsAuthenticated(true);
         } else {
           setIsAuthenticated(false);

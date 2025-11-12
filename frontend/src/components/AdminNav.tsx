@@ -1,9 +1,17 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useLogout } from '../hooks/useLogout';
+import { useState, useEffect } from 'react';
 
 export function AdminNav() {
   const logout = useLogout();
   const location = useLocation();
+  const [isSuperadmin, setIsSuperadmin] = useState(false);
+
+  useEffect(() => {
+    // Check if current user is superadmin
+    const superadminFlag = sessionStorage.getItem('isSuperadmin');
+    setIsSuperadmin(superadminFlag === 'true');
+  }, [location]); // Re-check when location changes
 
   const isActive = (path: string) => {
     return location.pathname === path || location.pathname.startsWith(path + '/');
@@ -17,7 +25,7 @@ export function AdminNav() {
             <Link
               to="/admin"
               className={`px-3 py-2 md:px-4 rounded-lg font-medium transition-colors text-sm md:text-base whitespace-nowrap ${
-                isActive('/admin') && !isActive('/admin/edit') && !isActive('/admin/list') && !isActive('/admin/settings')
+                isActive('/admin') && !isActive('/admin/edit') && !isActive('/admin/list') && !isActive('/admin/settings') && !isActive('/admin/delete-all')
                   ? 'bg-primary-100 text-primary-700'
                   : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
               }`}
@@ -44,6 +52,18 @@ export function AdminNav() {
             >
               View All
             </Link>
+            {isSuperadmin && (
+              <Link
+                to="/admin/delete-all"
+                className={`px-3 py-2 md:px-4 rounded-lg font-medium transition-colors text-sm md:text-base whitespace-nowrap ${
+                  isActive('/admin/delete-all')
+                    ? 'bg-red-100 text-red-700'
+                    : 'text-red-600 hover:bg-red-50 hover:text-red-700'
+                }`}
+              >
+                Delete All
+              </Link>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <Link

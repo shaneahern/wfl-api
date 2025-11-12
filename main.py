@@ -40,6 +40,8 @@ security = HTTPBasic()
 # Default values for local development (should be set via env vars in production)
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "wfl2026")
+SUPERADMIN_USERNAME = os.environ.get("SUPERADMIN_USERNAME", "superadmin")
+SUPERADMIN_PASSWORD = os.environ.get("SUPERADMIN_PASSWORD", "wfl2027")
 
 
 def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
@@ -54,6 +56,47 @@ def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
             headers={"WWW-Authenticate": "Basic"},
         )
     return credentials.username
+
+
+def verify_superadmin(credentials: HTTPBasicCredentials = Depends(security)):
+    """Verify superadmin credentials using HTTP Basic Auth."""
+    is_correct_username = secrets.compare_digest(credentials.username, SUPERADMIN_USERNAME)
+    is_correct_password = secrets.compare_digest(credentials.password, SUPERADMIN_PASSWORD)
+    
+    if not (is_correct_username and is_correct_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credentials.username
+
+
+def verify_admin_or_superadmin(credentials: HTTPBasicCredentials = Depends(security)):
+    """Verify admin or superadmin credentials. Returns username."""
+    username = credentials.username
+    password = credentials.password
+    
+    # Check superadmin first
+    is_superadmin = (
+        secrets.compare_digest(username, SUPERADMIN_USERNAME) and
+        secrets.compare_digest(password, SUPERADMIN_PASSWORD)
+    )
+    
+    # Check regular admin
+    is_admin = (
+        secrets.compare_digest(username, ADMIN_USERNAME) and
+        secrets.compare_digest(password, ADMIN_PASSWORD)
+    )
+    
+    if not (is_superadmin or is_admin):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    
+    return username
 
 
 # Street data structure
@@ -340,18 +383,19 @@ async def wfl_endpoint(
 
 
 @app.get("/admin/verify")
-async def verify_admin_endpoint(username: str = Depends(verify_admin)):
-    """Verify admin credentials. Returns success if authenticated."""
+async def verify_admin_endpoint(username: str = Depends(verify_admin_or_superadmin)):
+    """Verify admin or superadmin credentials. Returns success and username if authenticated."""
     return JSONResponse(content={
         "success": True,
         "authenticated": True,
-        "username": username
+        "username": username,
+        "isSuperadmin": username == SUPERADMIN_USERNAME
     })
 
 
 @app.delete("/admin/delete-all-buses")
-async def delete_all_buses(username: str = Depends(verify_admin)):
-    """Delete all bus documents from Firestore. Admin only."""
+async def delete_all_buses(username: str = Depends(verify_superadmin)):
+    """Delete all bus documents from Firestore. Superadmin only."""
     try:
         buses_ref = db.collection("Bus")
         buses = buses_ref.stream()
