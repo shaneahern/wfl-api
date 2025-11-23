@@ -327,10 +327,6 @@ export function BusEdit() {
               
               // Save regardless of geocoding result
               api.saveBus(busData).then(() => {
-                // Refresh GPS location if location mode was used
-                if (entryMode === 'location') {
-                  getCurrentPosition();
-                }
                 setSelectedBusId('');
                 refetch();
                 setLoading(false);
