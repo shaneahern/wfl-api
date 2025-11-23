@@ -401,6 +401,14 @@ export function BusInput() {
       setManualLocation(null);
       setCity('');
       setFullAddress('');
+      
+      // Refresh GPS location if location mode was used - ensures map shows new current position
+      // This is critical when entering multiple bus locations while walking (e.g., 50' apart)
+      // The map needs to refresh to show the updated GPS position after moving
+      if (entryMode === 'location') {
+        getCurrentPosition();
+      }
+      
       // Reset to default entry mode from settings
       setEntryMode(getDefaultEntryMode());
       refetch();
