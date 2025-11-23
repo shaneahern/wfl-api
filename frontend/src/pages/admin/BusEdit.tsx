@@ -15,7 +15,7 @@ type EntryMode = 'manual' | 'location';
 
 export function BusEdit() {
   const { buses, refetch } = useBuses();
-  const { position: currentPosition, loading: geoLoading, getCurrentPosition } = useGeolocation();
+  const { position: currentPosition, loading: geoLoading, getCurrentPosition, watchPosition, stopWatching } = useGeolocation();
   const [searchParams] = useSearchParams();
   const [selectedBusId, setSelectedBusId] = useState('');
   const [entryMode, setEntryMode] = useState<EntryMode>('location');
@@ -87,15 +87,16 @@ export function BusEdit() {
     }
   }, [selectedBusId, buses]);
 
-  // Initialize selectedLocation when currentPosition becomes available in location mode
+  // Update selectedLocation when currentPosition changes in location mode
+  // This ensures the map updates continuously as the user walks
   useEffect(() => {
-    if (entryMode === 'location' && currentPosition && !selectedLocation && !busLocation) {
+    if (entryMode === 'location' && currentPosition && !busLocation) {
       setSelectedLocation({
         lat: currentPosition.latitude,
         lng: currentPosition.longitude,
       });
     }
-  }, [entryMode, currentPosition, selectedLocation, busLocation]);
+  }, [entryMode, currentPosition, busLocation]);
 
   // Auto-get location when switching to location mode
   useEffect(() => {
@@ -103,6 +104,22 @@ export function BusEdit() {
       getCurrentPosition();
     }
   }, [entryMode, currentPosition, geoLoading, busLocation, getCurrentPosition]);
+
+  // Start continuous GPS tracking when in location mode - updates as user walks
+  useEffect(() => {
+    if (entryMode === 'location' && !busLocation) {
+      // Start watching position - will update continuously as user moves
+      watchPosition();
+    } else {
+      // Stop watching when switching away from location mode or when editing existing bus
+      stopWatching();
+    }
+    
+    // Cleanup: stop watching when component unmounts or mode changes
+    return () => {
+      stopWatching();
+    };
+  }, [entryMode, busLocation, watchPosition, stopWatching]);
 
   // Handle location mode - get current position when switching to location mode
   const handleLocationMode = () => {
