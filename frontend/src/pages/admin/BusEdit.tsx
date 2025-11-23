@@ -310,6 +310,10 @@ export function BusEdit() {
               
               // Save regardless of geocoding result
               api.saveBus(busData).then(() => {
+                // Refresh GPS location if location mode was used
+                if (entryMode === 'location') {
+                  getCurrentPosition();
+                }
                 setSelectedBusId('');
                 refetch();
                 setLoading(false);
@@ -323,6 +327,12 @@ export function BusEdit() {
       }
 
       await api.saveBus(busData);
+      
+      // Refresh GPS location if location mode was used - ensures map shows new current position
+      // This is critical when entering multiple bus locations while walking (e.g., 50' apart)
+      if (entryMode === 'location') {
+        getCurrentPosition();
+      }
       
       // Clear selection and refresh bus list
       setSelectedBusId('');
