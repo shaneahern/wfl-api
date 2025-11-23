@@ -15,7 +15,7 @@ type EntryMode = 'manual' | 'location';
 
 export function BusInput() {
   const { buses, refetch } = useBuses();
-  const { position: currentPosition, loading: geoLoading, getCurrentPosition } = useGeolocation();
+  const { position: currentPosition, loading: geoLoading, getCurrentPosition, watchPosition, stopWatching } = useGeolocation();
   
   // Initialize entry mode from settings
   const [entryMode, setEntryMode] = useState<EntryMode>(getDefaultEntryMode());
@@ -50,15 +50,16 @@ export function BusInput() {
     .filter((num) => !existingBusNumbers.has(num.toString()))
     .map((num) => num.toString());
 
-  // Initialize selectedLocation when currentPosition becomes available in location mode
+  // Update selectedLocation when currentPosition changes in location mode
+  // This ensures the map updates continuously as the user walks
   useEffect(() => {
-    if (entryMode === 'location' && currentPosition && !selectedLocation) {
+    if (entryMode === 'location' && currentPosition) {
       setSelectedLocation({
         lat: currentPosition.latitude,
         lng: currentPosition.longitude,
       });
     }
-  }, [entryMode, currentPosition, selectedLocation]);
+  }, [entryMode, currentPosition]);
 
   // Auto-get location when switching to location mode
   useEffect(() => {
@@ -66,6 +67,22 @@ export function BusInput() {
       getCurrentPosition();
     }
   }, [entryMode, currentPosition, geoLoading, getCurrentPosition]);
+
+  // Start continuous GPS tracking when in location mode - updates as user walks
+  useEffect(() => {
+    if (entryMode === 'location') {
+      // Start watching position - will update continuously as user moves
+      watchPosition();
+    } else {
+      // Stop watching when switching away from location mode
+      stopWatching();
+    }
+    
+    // Cleanup: stop watching when component unmounts or mode changes
+    return () => {
+      stopWatching();
+    };
+  }, [entryMode, watchPosition, stopWatching]);
 
   // Handle location mode - get current position when switching to location mode
   const handleLocationMode = () => {
